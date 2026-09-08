@@ -1,0 +1,23 @@
+@baseUrl = http://localhost:8080
+
+### Health check
+GET {{baseUrl}}/health
+
+### Get invoice
+GET {{baseUrl}}/invoices/3
+
+### Create invoice
+POST {{baseUrl}}/invoices
+Content-Type: application/json
+
+{
+  "invoice_number": "INV-{{$timestamp}}",
+  "unit_id": 1,
+  "due_date": "2026-09-30T00:00:00Z",
+  "items": [
+    {
+      "description": "Monthly service fee",
+      "amount_cents": 150000
+    }
+  ]
+}
