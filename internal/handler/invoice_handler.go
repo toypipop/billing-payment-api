@@ -29,11 +29,24 @@ func (h *InvoiceHandler) Create(c *gin.Context) {
 
 	invoice, err := h.invoiceService.Create(req)
 	if err != nil {
+		if errors.Is(err, service.ErrInvalidInvoice) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusCreated, invoice)
+}
+
+func (h *InvoiceHandler) GetAll(c *gin.Context) {
+	invoices, err := h.invoiceService.GetAll()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, invoices)
 }
 
 func (h *InvoiceHandler) GetByID(c *gin.Context) {

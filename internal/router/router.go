@@ -11,6 +11,7 @@ func SetupRouter(healthHandler *handler.HealthHandler, invoiceHandler *handler.I
 
 	r.GET("/health", healthHandler.Check)
 	r.POST("/invoices", invoiceHandler.Create)
+	r.GET("/invoices", invoiceHandler.GetAll)
 	r.GET("/invoices/:id", invoiceHandler.GetByID)
 
 	return r

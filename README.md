@@ -84,7 +84,40 @@ Endpoints:
 | --- | --- | --- |
 | `GET` | `/health` | Check API and database |
 | `POST` | `/invoices` | Create invoice |
+| `GET` | `/invoices` | Get all invoices with items, ordered by ID ascending; returns `[]` when empty |
 | `GET` | `/invoices/:id` | Get invoice by ID |
+
+`POST /invoices` request:
+
+```json
+{
+  "unit": "A101",
+  "due_date": "2026-08-01",
+  "items": [
+    { "description": "Common Fee", "amount": 1500 },
+    { "description": "Water Fee", "amount": 300 }
+  ]
+}
+```
+
+`unit` is the room number. Existing rooms are reused and their `updated_at`
+is refreshed; missing rooms are created. Each successful POST creates a new
+invoice with an automatically generated invoice number. Room and invoice writes
+run in one transaction.
+
+`due_date` must be a valid `YYYY-MM-DD` date. `amount` is in baht, is required,
+and accepts zero or positive values with up to two decimal places. Amounts are
+stored as integer satang; response fields remain `amount_cents` and
+`total_amount_cents` (the example totals `180000`). Requests no longer require
+`invoice_number` or `unit_id`.
+
+PostgreSQL integration tests use a temporary schema inside a rolled-back
+transaction. Run them with an account allowed to create schemas:
+
+```powershell
+$env:TEST_DATABASE_URL="postgres://billing_user:billing_password@localhost:5432/billing_payment?sslmode=disable"
+go test ./... -count=1
+```
 
 ## 4. Test API
 
@@ -122,3 +155,5 @@ Tables are auto-created on API startup:
 - `units`
 - `invoices`
 - `invoice_items`
+
+Startup does not seed any room or invoice data.

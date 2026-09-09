@@ -3,21 +3,27 @@
 ### Health check
 GET {{baseUrl}}/health
 
-### Get invoice
-GET {{baseUrl}}/invoices/3
+### Get all invoices
+GET {{baseUrl}}/invoices
+
+### Get invoice by ID
+GET {{baseUrl}}/invoices/1
 
 ### Create invoice
 POST {{baseUrl}}/invoices
 Content-Type: application/json
 
 {
-  "invoice_number": "INV-{{$timestamp}}",
-  "unit_id": 1,
-  "due_date": "2026-09-30T00:00:00Z",
+  "unit": "A101",
+  "due_date": "2026-08-01",
   "items": [
     {
-      "description": "Monthly service fee",
-      "amount_cents": 150000
+      "description": "Common Fee",
+      "amount": 1500
+    },
+    {
+      "description": "Water Fee",
+      "amount": 300
     }
   ]
 }

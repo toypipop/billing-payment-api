@@ -26,23 +26,5 @@ func Connect() (*gorm.DB, error) {
 		return nil, err
 	}
 
-	if err := seedUnits(db); err != nil {
-		return nil, err
-	}
-
 	return db, nil
-}
-
-func seedUnits(db *gorm.DB) error {
-	units := []model.Unit{
-		{ID: 1, UnitNumber: "A101"},
-	}
-
-	for _, unit := range units {
-		if err := db.FirstOrCreate(&unit, model.Unit{ID: unit.ID}).Error; err != nil {
-			return err
-		}
-	}
-
-	return nil
 }

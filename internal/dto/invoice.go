@@ -1,17 +1,44 @@
 package dto
 
-import "time"
+import (
+	"encoding/json"
+	"fmt"
+	"math/big"
+	"time"
+)
 
 type CreateInvoiceRequest struct {
-	InvoiceNumber string                     `json:"invoice_number" binding:"required"`
-	UnitID        uint                       `json:"unit_id" binding:"required"`
-	DueDate       time.Time                  `json:"due_date" binding:"required"`
-	Items         []CreateInvoiceItemRequest `json:"items" binding:"required,min=1,dive"`
+	Unit    string                     `json:"unit" binding:"required,max=50"`
+	DueDate string                     `json:"due_date" binding:"required"`
+	Items   []CreateInvoiceItemRequest `json:"items" binding:"required,min=1,dive"`
 }
 
 type CreateInvoiceItemRequest struct {
-	Description string `json:"description" binding:"required"`
-	AmountCents int64  `json:"amount_cents" binding:"required,gte=0"`
+	Description string  `json:"description" binding:"required"`
+	Amount      *Amount `json:"amount" binding:"required"`
+}
+
+// Amount accepts currency units in JSON and stores exact integer cents.
+type Amount int64
+
+func (a *Amount) UnmarshalJSON(data []byte) error {
+	var number json.Number
+	if len(data) == 0 || data[0] == '"' || string(data) == "null" {
+		return fmt.Errorf("amount must be a non-negative number with at most two decimal places")
+	}
+	if err := json.Unmarshal(data, &number); err != nil {
+		return err
+	}
+	value, ok := new(big.Rat).SetString(number.String())
+	if !ok || value.Sign() < 0 {
+		return fmt.Errorf("amount must be a non-negative number")
+	}
+	value.Mul(value, big.NewRat(100, 1))
+	if !value.IsInt() || !value.Num().IsInt64() {
+		return fmt.Errorf("amount must fit in integer cents and have at most two decimal places")
+	}
+	*a = Amount(value.Num().Int64())
+	return nil
 }
 
 type InvoiceResponse struct {
