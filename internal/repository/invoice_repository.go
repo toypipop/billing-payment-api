@@ -25,13 +25,21 @@ func (r *InvoiceRepository) Create(invoice *model.Invoice, unitNumber string) er
 			return err
 		}
 		invoice.UnitID = unit.ID
-		return tx.Create(invoice).Error
+		if err := tx.Create(invoice).Error; err != nil {
+			return err
+		}
+		invoice.Unit = unit
+		return nil
 	})
 }
 
-func (r *InvoiceRepository) GetAll() ([]model.Invoice, error) {
+func (r *InvoiceRepository) GetAll(unitNumber *string) ([]model.Invoice, error) {
 	var invoices []model.Invoice
-	err := r.db.Preload("InvoiceItems", func(db *gorm.DB) *gorm.DB {
+	query := r.db
+	if unitNumber != nil {
+		query = query.Where("unit_id IN (?)", r.db.Model(&model.Unit{}).Select("id").Where("unit_number = ?", *unitNumber))
+	}
+	err := query.Preload("Unit").Preload("InvoiceItems", func(db *gorm.DB) *gorm.DB {
 		return db.Order("id ASC")
 	}).Order("id ASC").Find(&invoices).Error
 	return invoices, err
@@ -39,7 +47,9 @@ func (r *InvoiceRepository) GetAll() ([]model.Invoice, error) {
 
 func (r *InvoiceRepository) GetByID(id uint) (*model.Invoice, error) {
 	var invoice model.Invoice
-	err := r.db.Preload("InvoiceItems").First(&invoice, id).Error
+	err := r.db.Preload("Unit").Preload("InvoiceItems", func(db *gorm.DB) *gorm.DB {
+		return db.Order("id ASC")
+	}).First(&invoice, id).Error
 	if err != nil {
 		return nil, err
 	}

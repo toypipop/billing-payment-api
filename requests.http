@@ -1,29 +1,34 @@
 @baseUrl = http://localhost:8080
+@unit = A101
 
 ### Health check
 GET {{baseUrl}}/health
 
-### Get all invoices
-GET {{baseUrl}}/invoices
-
-### Get invoice by ID
-GET {{baseUrl}}/invoices/1
-
 ### Create invoice
+# @name createInvoice
 POST {{baseUrl}}/invoices
 Content-Type: application/json
 
 {
-  "unit": "A101",
+  "unit": "{{unit}}",
   "due_date": "2026-08-01",
   "items": [
-    {
-      "description": "Common Fee",
-      "amount": 1500
-    },
-    {
-      "description": "Water Fee",
-      "amount": 300
-    }
+    { "description": "Common Fee", "amount_thb": 1500 },
+    { "description": "Water Fee", "amount_thb": 300 }
   ]
+}
+
+### Get invoices by unit (edit @unit above; repeat after payment)
+GET {{baseUrl}}/invoices?unit={{unit}}
+
+### Get all invoices
+GET {{baseUrl}}/invoices
+
+### Create payment
+POST {{baseUrl}}/payments
+Content-Type: application/json
+
+{
+  "unit": "{{unit}}",
+  "amount_thb": 599
 }

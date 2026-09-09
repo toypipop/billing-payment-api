@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"billing-payment-api/internal/dto"
+	"billing-payment-api/internal/response"
 	"billing-payment-api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -23,47 +24,61 @@ func NewInvoiceHandler(invoiceService *service.InvoiceService) *InvoiceHandler {
 func (h *InvoiceHandler) Create(c *gin.Context) {
 	var req dto.CreateInvoiceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.Error(c, http.StatusBadRequest, "INVALID_REQUEST", "invalid invoice request: "+err.Error(), nil)
 		return
 	}
 
 	invoice, err := h.invoiceService.Create(req)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidInvoice) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			response.Error(c, http.StatusBadRequest, "INVALID_INVOICE", err.Error(), nil)
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "could not create invoice", err)
 		return
 	}
 
+	c.Header("Location", "/invoices/"+strconv.FormatUint(uint64(invoice.ID), 10))
 	c.JSON(http.StatusCreated, invoice)
 }
 
 func (h *InvoiceHandler) GetAll(c *gin.Context) {
-	invoices, err := h.invoiceService.GetAll()
+	var unit *string
+	if values, present := c.Request.URL.Query()["unit"]; present {
+		if len(values) != 1 {
+			response.Error(c, http.StatusBadRequest, "INVALID_UNIT", "provide exactly one unit", nil)
+			return
+		}
+		unit = &values[0]
+	}
+	invoices, err := h.invoiceService.GetAll(unit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		if errors.Is(err, service.ErrInvalidUnit) {
+			response.Error(c, http.StatusBadRequest, "INVALID_UNIT", err.Error(), nil)
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "could not get invoices", err)
 		return
 	}
 	c.JSON(http.StatusOK, invoices)
 }
 
 func (h *InvoiceHandler) GetByID(c *gin.Context) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid invoice id"})
+	// PostgreSQL stores IDs in signed bigint columns.
+	id, err := strconv.ParseUint(c.Param("id"), 10, 63)
+	if err != nil || id == 0 {
+		response.Error(c, http.StatusBadRequest, "INVALID_INVOICE_ID", "invalid invoice id", nil)
 		return
 	}
 
 	invoice, err := h.invoiceService.GetByID(uint(id))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "invoice not found"})
+			response.Error(c, http.StatusNotFound, "INVOICE_NOT_FOUND", "invoice not found", nil)
 			return
 		}
 
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		response.Error(c, http.StatusInternalServerError, "INTERNAL_ERROR", "could not get invoice", err)
 		return
 	}
 

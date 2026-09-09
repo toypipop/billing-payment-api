@@ -8,6 +8,7 @@ type Invoice struct {
 	UnitID           uint      `gorm:"not null;index" json:"-"`
 	DueDate          time.Time `gorm:"type:date;not null" json:"-"`
 	TotalAmountCents int64     `gorm:"column:total_amount_cents;not null;check:total_amount_cents >= 0" json:"-"`
+	PaidAmountCents  int64     `gorm:"not null;default:0;check:paid_amount_cents >= 0 AND paid_amount_cents <= total_amount_cents" json:"-"`
 	CreatedAt        time.Time `json:"-"`
 	UpdatedAt        time.Time `json:"-"`
 

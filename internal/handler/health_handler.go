@@ -1,7 +1,11 @@
 package handler
 
 import (
+	"context"
 	"net/http"
+	"time"
+
+	"billing-payment-api/internal/response"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -18,12 +22,14 @@ func NewHealthHandler(db *gorm.DB) *HealthHandler {
 func (h *HealthHandler) Check(c *gin.Context) {
 	sqlDB, err := h.db.DB()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "database": "unavailable"})
+		response.Error(c, http.StatusServiceUnavailable, "DATABASE_UNAVAILABLE", "database unavailable", err)
 		return
 	}
 
-	if err := sqlDB.Ping(); err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "database": "unavailable"})
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+	defer cancel()
+	if err := sqlDB.PingContext(ctx); err != nil {
+		response.Error(c, http.StatusServiceUnavailable, "DATABASE_UNAVAILABLE", "database unavailable", err)
 		return
 	}
 

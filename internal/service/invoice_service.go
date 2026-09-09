@@ -10,9 +10,11 @@ import (
 	"math"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 var ErrInvalidInvoice = errors.New("invalid invoice")
+var ErrInvalidUnit = errors.New("invalid unit")
 
 type InvoiceService struct {
 	invoiceRepository *repository.InvoiceRepository
@@ -24,8 +26,11 @@ func NewInvoiceService(invoiceRepository *repository.InvoiceRepository) *Invoice
 
 func (s *InvoiceService) Create(req dto.CreateInvoiceRequest) (*dto.InvoiceResponse, error) {
 	unitNumber := strings.TrimSpace(req.Unit)
-	if unitNumber == "" {
-		return nil, fmt.Errorf("%w: unit is required", ErrInvalidInvoice)
+	if unitNumber == "" || utf8.RuneCountInString(unitNumber) > 50 {
+		return nil, fmt.Errorf("%w: unit must contain 1 to 50 characters", ErrInvalidInvoice)
+	}
+	if len(req.Items) == 0 {
+		return nil, fmt.Errorf("%w: at least one item is required", ErrInvalidInvoice)
 	}
 	dueDate, err := time.Parse("2006-01-02", req.DueDate)
 	if err != nil {
@@ -35,16 +40,20 @@ func (s *InvoiceService) Create(req dto.CreateInvoiceRequest) (*dto.InvoiceRespo
 	items := make([]model.InvoiceItem, 0, len(req.Items))
 
 	for _, item := range req.Items {
-		if item.Amount == nil || *item.Amount < 0 {
-			return nil, fmt.Errorf("%w: amount is required and must be non-negative", ErrInvalidInvoice)
+		description := strings.TrimSpace(item.Description)
+		if description == "" {
+			return nil, fmt.Errorf("%w: item description is required", ErrInvalidInvoice)
 		}
-		amountCents := int64(*item.Amount)
+		if item.AmountTHB == nil || *item.AmountTHB < 0 {
+			return nil, fmt.Errorf("%w: amount_thb is required and must be non-negative", ErrInvalidInvoice)
+		}
+		amountCents := int64(*item.AmountTHB)
 		if amountCents > math.MaxInt64-totalAmountCents {
 			return nil, fmt.Errorf("%w: total amount is too large", ErrInvalidInvoice)
 		}
 		totalAmountCents += amountCents
 		items = append(items, model.InvoiceItem{
-			Description: item.Description,
+			Description: description,
 			AmountCents: amountCents,
 		})
 	}
@@ -63,8 +72,15 @@ func (s *InvoiceService) Create(req dto.CreateInvoiceRequest) (*dto.InvoiceRespo
 	return toInvoiceResponse(&invoice), nil
 }
 
-func (s *InvoiceService) GetAll() ([]dto.InvoiceResponse, error) {
-	invoices, err := s.invoiceRepository.GetAll()
+func (s *InvoiceService) GetAll(unitNumber *string) ([]dto.InvoiceResponse, error) {
+	if unitNumber != nil {
+		unit := strings.TrimSpace(*unitNumber)
+		if unit == "" || utf8.RuneCountInString(unit) > 50 {
+			return nil, fmt.Errorf("%w: unit must contain 1 to 50 characters", ErrInvalidUnit)
+		}
+		unitNumber = &unit
+	}
+	invoices, err := s.invoiceRepository.GetAll(unitNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -90,20 +106,34 @@ func toInvoiceResponse(invoice *model.Invoice) *dto.InvoiceResponse {
 		items = append(items, dto.InvoiceItemResponse{
 			ID:          item.ID,
 			Description: item.Description,
-			AmountCents: item.AmountCents,
+			AmountTHB:   dto.Amount(item.AmountCents),
 			CreatedAt:   item.CreatedAt,
 			UpdatedAt:   item.UpdatedAt,
 		})
 	}
 
 	return &dto.InvoiceResponse{
-		ID:               invoice.ID,
-		InvoiceNumber:    invoice.InvoiceNumber,
-		UnitID:           invoice.UnitID,
-		DueDate:          invoice.DueDate,
-		TotalAmountCents: invoice.TotalAmountCents,
-		CreatedAt:        invoice.CreatedAt,
-		UpdatedAt:        invoice.UpdatedAt,
-		Items:            items,
+		ID:                   invoice.ID,
+		InvoiceNumber:        invoice.InvoiceNumber,
+		UnitID:               invoice.UnitID,
+		Unit:                 invoice.Unit.UnitNumber,
+		PaidAmountTHB:        dto.Amount(invoice.PaidAmountCents),
+		OutstandingAmountTHB: dto.Amount(invoice.TotalAmountCents - invoice.PaidAmountCents),
+		Status:               invoiceStatus(invoice.TotalAmountCents, invoice.PaidAmountCents),
+		DueDate:              invoice.DueDate,
+		TotalAmountTHB:       dto.Amount(invoice.TotalAmountCents),
+		CreatedAt:            invoice.CreatedAt,
+		UpdatedAt:            invoice.UpdatedAt,
+		Items:                items,
 	}
+}
+
+func invoiceStatus(total, paid int64) string {
+	if paid == total {
+		return "PAID"
+	}
+	if paid > 0 {
+		return "PARTIAL"
+	}
+	return "UNPAID"
 }

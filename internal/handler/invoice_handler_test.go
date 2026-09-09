@@ -49,7 +49,7 @@ func TestCreateInvoiceUnitLifecycle(t *testing.T) {
 	if err := tx.AutoMigrate(&model.Unit{}, &model.Invoice{}, &model.InvoiceItem{}); err != nil {
 		t.Fatal(err)
 	}
-	r := router.SetupRouter(handler.NewHealthHandler(tx), handler.NewInvoiceHandler(service.NewInvoiceService(repository.NewInvoiceRepository(tx))))
+	r := router.SetupRouter(handler.NewHealthHandler(tx), handler.NewInvoiceHandler(service.NewInvoiceService(repository.NewInvoiceRepository(tx))), handler.NewPaymentHandler(service.NewPaymentService(repository.NewPaymentRepository(tx))))
 	empty := httptest.NewRecorder()
 	r.ServeHTTP(empty, httptest.NewRequest(http.MethodGet, "/invoices", nil))
 	if empty.Code != http.StatusOK || strings.TrimSpace(empty.Body.String()) != "[]" {
@@ -63,7 +63,7 @@ func TestCreateInvoiceUnitLifecycle(t *testing.T) {
 		r.ServeHTTP(w, req)
 		return w
 	}
-	payload := `{"unit":"A101","due_date":"2026-08-01","items":[{"description":"Common Fee","amount":1500},{"description":"Water Fee","amount":300}]}`
+	payload := `{"unit":"A101","due_date":"2026-08-01","items":[{"description":"Common Fee","amount_thb":1500},{"description":"Water Fee","amount_thb":300}]}`
 	first := post(payload)
 	if first.Code != http.StatusCreated {
 		t.Fatalf("POST = %d: %s", first.Code, first.Body.String())
@@ -72,8 +72,24 @@ func TestCreateInvoiceUnitLifecycle(t *testing.T) {
 	if err := json.Unmarshal(first.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.TotalAmountCents != 180000 || len(result.Items) != 2 || result.Items[0].AmountCents != 150000 || result.InvoiceNumber == "" || result.DueDate.Format("2006-01-02") != "2026-08-01" {
+	if result.TotalAmountTHB != 180000 || len(result.Items) != 2 || result.Items[0].AmountTHB != 150000 || result.InvoiceNumber == "" || result.DueDate.Format("2006-01-02") != "2026-08-01" {
 		t.Fatalf("unexpected invoice: %+v", result)
+	}
+	if result.Unit != "A101" || result.PaidAmountTHB != 0 || result.OutstandingAmountTHB != 180000 || result.Status != "UNPAID" {
+		t.Fatalf("unexpected balance: %+v", result)
+	}
+	get := httptest.NewRecorder()
+	r.ServeHTTP(get, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/invoices/%d", result.ID), nil))
+	var fetched dto.InvoiceResponse
+	if get.Code != http.StatusOK || json.Unmarshal(get.Body.Bytes(), &fetched) != nil || fetched.Unit != "A101" || fetched.Status != "UNPAID" || fetched.OutstandingAmountTHB != 180000 || len(fetched.Items) != 2 {
+		t.Fatalf("GET = %d: %s", get.Code, get.Body.String())
+	}
+	for path, want := range map[string]int{"/invoices/0": 400, "/invoices/abc": 400, "/invoices/-1": 400, "/invoices/999999": 404} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != want {
+			t.Fatalf("%s = %d, want %d", path, w.Code, want)
+		}
 	}
 	var unit model.Unit
 	if err := tx.First(&unit, result.UnitID).Error; err != nil {
@@ -120,7 +136,10 @@ func TestCreateInvoiceUnitLifecycle(t *testing.T) {
 		t.Fatalf("invoice count = %d", len(invoices))
 	}
 	for i, invoice := range invoices {
-		if len(invoice.Items) != 2 || invoice.TotalAmountCents != 180000 || invoice.Items[0].Description != "Common Fee" || invoice.Items[0].AmountCents != 150000 {
+		if invoice.Unit == "" || invoice.Status != "UNPAID" || invoice.PaidAmountTHB != 0 || invoice.OutstandingAmountTHB != 180000 {
+			t.Fatalf("incomplete balance in list: %+v", invoice)
+		}
+		if len(invoice.Items) != 2 || invoice.TotalAmountTHB != 180000 || invoice.Items[0].Description != "Common Fee" || invoice.Items[0].AmountTHB != 150000 {
 			t.Fatalf("incomplete invoice: %+v", invoice)
 		}
 		if i > 0 && invoices[i-1].ID >= invoice.ID {
@@ -138,7 +157,7 @@ func TestCreateInvoiceUnitLifecycle(t *testing.T) {
 		t.Fatalf("unit count = %d", count)
 	}
 	for _, amount := range []string{"0", "0.29", "1500.50"} {
-		w := post(`{"unit":"A101","due_date":"2026-08-01","items":[{"description":"Fee","amount":` + amount + `}]}`)
+		w := post(`{"unit":"A101","due_date":"2026-08-01","items":[{"description":"Fee","amount_thb":` + amount + `}]}`)
 		if w.Code != http.StatusCreated {
 			t.Fatalf("amount %s: %d %s", amount, w.Code, w.Body.String())
 		}
@@ -147,19 +166,23 @@ func TestCreateInvoiceUnitLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 		want := map[string]int64{"0": 0, "0.29": 29, "1500.50": 150050}[amount]
-		if got.TotalAmountCents != want {
-			t.Fatalf("amount %s = %d cents", amount, got.TotalAmountCents)
+		if int64(got.TotalAmountTHB) != want {
+			t.Fatalf("amount %s = %d cents", amount, got.TotalAmountTHB)
+		}
+		if want == 0 && (got.Status != "PAID" || got.OutstandingAmountTHB != 0) {
+			t.Fatalf("zero-total invoice: %+v", got)
 		}
 	}
 	for _, body := range []string{
 		strings.Replace(payload, "2026-08-01", "2026-02-30", 1),
 		strings.Replace(payload, "A101", "   ", 1),
+		strings.Replace(payload, "Common Fee", "   ", 1),
 		`{"unit":"X","due_date":"2026-08-01","items":[]}`,
 		`{"unit":"X","due_date":"2026-08-01","items":[{"description":"Fee"}]}`,
-		`{"unit":"X","due_date":"2026-08-01","items":[{"description":"Fee","amount":-1}]}`,
-		`{"unit":"X","due_date":"2026-08-01","items":[{"description":"Fee","amount":0.001}]}`,
-		`{"unit":"X","due_date":"2026-08-01","items":[{"description":"Fee","amount":92233720368547758.08}]}`,
-		`{"unit":"X","due_date":"2026-08-01","items":[{"description":"Fee","amount":92233720368547758.07},{"description":"Fee","amount":1}]}`,
+		`{"unit":"X","due_date":"2026-08-01","items":[{"description":"Fee","amount_thb":-1}]}`,
+		`{"unit":"X","due_date":"2026-08-01","items":[{"description":"Fee","amount_thb":0.001}]}`,
+		`{"unit":"X","due_date":"2026-08-01","items":[{"description":"Fee","amount_thb":92233720368547758.08}]}`,
+		`{"unit":"X","due_date":"2026-08-01","items":[{"description":"Fee","amount_thb":92233720368547758.07},{"description":"Fee","amount_thb":1}]}`,
 	} {
 		w := post(body)
 		if w.Code != http.StatusBadRequest {
