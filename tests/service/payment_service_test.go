@@ -1,4 +1,4 @@
-package service
+package service_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"billing-payment-api/internal/dto"
+	"billing-payment-api/internal/service"
 )
 
 func TestPaymentValidation(t *testing.T) {
@@ -19,7 +20,7 @@ func TestPaymentValidation(t *testing.T) {
 		{Unit: "A101", AmountTHB: &zero},
 		{Unit: "A101", AmountTHB: &negative},
 	} {
-		if _, err := NewPaymentService(nil).Create(context.Background(), req); !errors.Is(err, ErrInvalidPayment) {
+		if _, err := service.NewPaymentService(nil).Create(context.Background(), req); !errors.Is(err, service.ErrInvalidPayment) {
 			t.Fatalf("expected invalid payment, got %v", err)
 		}
 	}

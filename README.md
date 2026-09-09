@@ -311,6 +311,22 @@ Invoice field limits are also enforced by the service for calls outside HTTP.
 
 ### Automated checks
 
+All test files live under `tests/`, grouped by the code they exercise:
+
+```text
+tests/
+  dto/
+  handler/
+  middleware/
+  model/
+  router/
+  service/
+```
+
+Run all tests with `go test ./...`, or just the test tree with
+`go test ./tests/...`. For coverage of application code from these separate
+test packages, use `go test ./tests/... -coverpkg=./internal/...`.
+
 `go test ./...` runs unit tests; PostgreSQL integration tests are skipped unless
 `TEST_DATABASE_URL` is set. Integration tests cover creation, balances, ordering,
 partial/full payments, paid invoices, invalid requests, overpayments, rollback,
