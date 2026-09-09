@@ -2,10 +2,9 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-  cmd = "go build -o ./tmp/main.exe ."
-  entrypoint = ["./tmp/main.exe"]
-  include_ext = ["go"]
-  exclude_dir = ["tmp", "vendor", ".git"]
-  exclude_regex = ["_test.go"]
-  delay = 1000
-  stop_on_error = true
+cmd = "go build -o ./tmp/main.exe ."
+entrypoint = ["./tmp/main.exe"]
+include_ext = ["go"]
+exclude_dir = ["tmp", "vendor", ".git"]
+exclude_regex = ["_test.go"]
+stop_on_error = true

@@ -9,6 +9,7 @@ Current stack:
 - PostgreSQL
 - GORM
 - Docker Compose
+- Air for automatic rebuilds during development
 
 ## 1. Install
 
@@ -24,10 +25,23 @@ Install Go dependencies:
 go mod tidy
 ```
 
-Create `.env` file:
+Install Air (the version verified with this project's Windows configuration):
 
 ```bash
-cp .env.example .env
+go install github.com/air-verse/air@v1.65.3
+```
+
+Make sure Go's binary directory is on `PATH` (normally `%USERPROFILE%\go\bin`
+on Windows), then check `air -v`.
+
+The API reads `DATABASE_URL` and `PORT` from the process environment. Defaults
+work with the included Docker Compose setup. `.env.example` documents the database
+URL; copying it to `.env` alone does not load it into `go run .` or the included
+Air configuration. To override settings in PowerShell before running either command:
+
+```powershell
+$env:DATABASE_URL="postgres://billing_user:billing_password@localhost:5432/billing_payment?sslmode=disable"
+$env:PORT="8080"
 ```
 
 ## 2. How to Run
@@ -49,23 +63,6 @@ Run API server:
 go run .
 ```
 
-For automatic reload on Go file changes, install Air:
-
-```bash
-go install github.com/air-verse/air@v1.64.5
-```
-
-Then run:
-
-```bash
-air
-```
-
-The included `.air.toml` builds `.` and watches Go files throughout the
-project, including `internal`. Build output is stored in `tmp/`.
-If `air` is not found, add your Go bin directory (usually `%USERPROFILE%\go\bin`
-on Windows) to `PATH`.
-
 Server URL:
 
 ```text
@@ -75,11 +72,27 @@ http://localhost:8080
 If port `8080` is already used:
 
 ```powershell
-$env:PORT="8081"
-go run .
+$env:PORT="8081"; go run .
 ```
 
-When using Air, run `air` instead of `go run .` after setting `PORT`.
+For automatic rebuilds during development, run Air from the project root:
+
+```bash
+air
+```
+
+The included `.air.toml` builds `main.go` at the root into `tmp/main.exe`
+for Windows and restarts the API when Go source files change.
+It stops the running binary if a rebuild fails. Stop Air with `Ctrl+C`.
+
+To use a different port with Air:
+
+```powershell
+$env:PORT="8081"
+air
+```
+
+When using `go run .`, restart the command after changing Go source files.
 
 Run check:
 
@@ -93,7 +106,25 @@ Stop PostgreSQL:
 docker compose down
 ```
 
-## 3. API Character
+## 3. Project Structure and API
+
+Run commands from the directory containing `main.go` and `go.mod`:
+
+```text
+main.go                 Application entrypoint
+.air.toml               Air configuration for Windows
+internal/
+  database/             PostgreSQL connection and schema migration
+  dto/                  Request and response types
+  handler/              HTTP handlers and integration tests
+  model/                Database models
+  repository/           Database queries
+  router/               HTTP routes
+  service/              Invoice logic
+requests.http           REST Client requests
+docker-compose.yml      Local PostgreSQL
+tmp/                    Build output and logs
+```
 
 Request flow:
 
@@ -340,6 +371,8 @@ $env:TEST_DATABASE_URL="postgres://billing_user:billing_password@localhost:5432/
 go test ./... -count=1
 ```
 
+Without `TEST_DATABASE_URL`, the PostgreSQL integration tests are skipped.
+
 ## 4. Test API
 
 ### VS Code REST Client
@@ -348,20 +381,17 @@ go test ./... -count=1
 2. Open `requests.http`
 3. Click `Send Request` on `Health check`
 4. Click `Send Request` on `Create invoice`
-5. Run `Get invoices by unit`; change `@unit` at the top to select a unit
-6. Run `Create payment`, then get the invoice again to inspect its balance and status
-7. Reuse `@paymentKey` to retry that payment; change it before making a new payment
-
-`requests.http` contains five core requests. Change `@unit` to a fresh unit name
-for an isolated example: creating one 1,800-baht invoice and paying 599 baht
-leaves 1,201 baht outstanding with status `PARTIAL`. Repeating `Create invoice`
-creates another invoice; payments always go to the unit's oldest outstanding
-invoices first. Additional edge cases are covered by automated tests above.
+5. Click `Send Request` on `Get all invoices` to list all invoices
+6. To get one invoice, copy its returned `id` into `Get invoice by ID`
 
 ### curl
 
 ```bash
 curl http://localhost:8080/health
+```
+
+```bash
+curl http://localhost:8080/invoices
 ```
 
 ```bash
