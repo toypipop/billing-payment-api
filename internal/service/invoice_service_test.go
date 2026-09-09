@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -34,7 +35,7 @@ func TestCreateInvoiceValidation(t *testing.T) {
 		{Unit: "A101", DueDate: "2026-08-01"},
 		{Unit: "A101", DueDate: "2026-08-01", Items: []dto.CreateInvoiceItemRequest{{Description: "  ", AmountTHB: &amount}}},
 	} {
-		if _, err := NewInvoiceService(nil).Create(req); !errors.Is(err, ErrInvalidInvoice) {
+		if _, err := NewInvoiceService(nil).Create(context.Background(), req); !errors.Is(err, ErrInvalidInvoice) {
 			t.Fatalf("expected invalid invoice, got %v", err)
 		}
 	}

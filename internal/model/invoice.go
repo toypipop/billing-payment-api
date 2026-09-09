@@ -2,6 +2,26 @@ package model
 
 import "time"
 
+const (
+	InvoiceUnpaid  = "UNPAID"
+	InvoicePartial = "PARTIAL"
+	InvoicePaid    = "PAID"
+)
+
+func (invoice Invoice) Outstanding() int64 {
+	return invoice.TotalAmountCents - invoice.PaidAmountCents
+}
+
+func (invoice Invoice) Status() string {
+	if invoice.Outstanding() == 0 {
+		return InvoicePaid
+	}
+	if invoice.PaidAmountCents > 0 {
+		return InvoicePartial
+	}
+	return InvoiceUnpaid
+}
+
 type Invoice struct {
 	ID               uint      `gorm:"primaryKey" json:"-"`
 	InvoiceNumber    string    `gorm:"type:varchar(50);not null;uniqueIndex" json:"-"`

@@ -6,11 +6,11 @@ import (
 	"strconv"
 
 	"billing-payment-api/internal/dto"
+	"billing-payment-api/internal/model"
 	"billing-payment-api/internal/response"
 	"billing-payment-api/internal/service"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 type InvoiceHandler struct {
@@ -23,12 +23,11 @@ func NewInvoiceHandler(invoiceService *service.InvoiceService) *InvoiceHandler {
 
 func (h *InvoiceHandler) Create(c *gin.Context) {
 	var req dto.CreateInvoiceRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "INVALID_REQUEST", "invalid invoice request: "+err.Error(), nil)
+	if !bindJSON(c, &req) {
 		return
 	}
 
-	invoice, err := h.invoiceService.Create(req)
+	invoice, err := h.invoiceService.Create(c.Request.Context(), req)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidInvoice) {
 			response.Error(c, http.StatusBadRequest, "INVALID_INVOICE", err.Error(), nil)
@@ -51,7 +50,7 @@ func (h *InvoiceHandler) GetAll(c *gin.Context) {
 		}
 		unit = &values[0]
 	}
-	invoices, err := h.invoiceService.GetAll(unit)
+	invoices, err := h.invoiceService.GetAll(c.Request.Context(), unit)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidUnit) {
 			response.Error(c, http.StatusBadRequest, "INVALID_UNIT", err.Error(), nil)
@@ -71,9 +70,9 @@ func (h *InvoiceHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	invoice, err := h.invoiceService.GetByID(uint(id))
+	invoice, err := h.invoiceService.GetByID(c.Request.Context(), uint(id))
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+		if errors.Is(err, model.ErrInvoiceNotFound) {
 			response.Error(c, http.StatusNotFound, "INVOICE_NOT_FOUND", "invoice not found", nil)
 			return
 		}

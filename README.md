@@ -101,6 +101,16 @@ Request flow:
 Request -> Router -> Handler -> Service -> Repository -> PostgreSQL
 ```
 
+Handlers translate HTTP requests and application errors. Services validate input
+and build responses, using small repository interfaces. Repositories handle GORM,
+database error translation, and transactions. Request contexts reach all invoice
+and payment queries.
+
+`model.PlanPayment` calculates allocation without database access or changing its
+input. The payment repository calls it after locking invoices and saves the plan
+in the same transaction. `Invoice.Outstanding()` and `Invoice.Status()` keep balance
+rules shared between invoice and payment responses.
+
 Endpoints:
 
 | Method | Endpoint | Description |
@@ -251,9 +261,53 @@ transaction. A lock on the unit serializes simultaneous payments for that unit;
 invoice rows are also locked during allocation. Invoice creation uses the same
 unit lock via its upsert. Different units can be processed independently.
 
-Each successful POST records a new payment. There is no idempotency key support;
-repeating a successful request may record another payment if enough debt remains.
 This endpoint records payments; it does not charge a bank account or card.
+
+### Payment retries (Idempotency-Key)
+
+Send an optional `Idempotency-Key` header on `POST /payments`. Use a unique key
+for each intended payment and reuse it when retrying that payment:
+
+```http
+POST /payments
+Content-Type: application/json
+Idempotency-Key: payment-demo-001
+
+{"unit":"A101","amount_thb":599}
+```
+
+- First success: `201`, with a new payment.
+- Same key, same trimmed unit and amount: `200`, with the original payment ID
+  and allocation balances, plus `Idempotency-Replayed: true`. No new payment is
+  saved, including when the unit has since been fully paid.
+- Same key, different unit or amount: `409 IDEMPOTENCY_CONFLICT`.
+- Invalid key: `400 INVALID_IDEMPOTENCY_KEY`. Supply one header containing
+  1–128 ASCII letters, digits, hyphens or underscores.
+- Failed/rolled-back requests do not consume the key; they may be retried.
+- Without a key, every successful POST records a new payment, as before.
+
+Keys are global to this API database and persist with the payment; they do not
+expire automatically. A transaction-scoped advisory lock serializes the same key
+even across different units, and a unique index prevents duplicate stored keys.
+The key, payment, allocations and balance changes commit together. Existing
+payments retain a null key. Allocation records save their post-payment paid
+amount so replay uses the original balance, rather than a later payment's balance.
+Use invoice GET endpoints to see current balances. Response timestamps use UTC.
+
+### Request validation limits
+
+Both POST endpoints require `Content-Type: application/json` (parameters such as
+`charset=utf-8` are accepted); missing or unsupported media types return `415
+UNSUPPORTED_MEDIA_TYPE`. JSON must contain exactly one object, with no unknown
+fields or trailing values/text. These failures return `400 INVALID_REQUEST`.
+
+- Maximum body: 1 MiB, including trailing whitespace; larger bodies return `413
+  REQUEST_TOO_LARGE`.
+- Invoice items: 1–100.
+- Item description: nonblank, at most 500 characters.
+- Unit: nonblank, at most 50 characters.
+
+Invoice field limits are also enforced by the service for calls outside HTTP.
 
 ### Automated checks
 
@@ -280,6 +334,7 @@ go test ./... -count=1
 4. Click `Send Request` on `Create invoice`
 5. Run `Get invoices by unit`; change `@unit` at the top to select a unit
 6. Run `Create payment`, then get the invoice again to inspect its balance and status
+7. Reuse `@paymentKey` to retry that payment; change it before making a new payment
 
 `requests.http` contains five core requests. Change `@unit` to a fresh unit name
 for an isolated example: creating one 1,800-baht invoice and paying 599 baht
@@ -321,12 +376,14 @@ Startup does not seed any room or invoice data.
 
 | HTTP status | When this API returns it |
 | --- | --- |
-| `200 OK` | Health check succeeds, or invoices are retrieved; an empty list is `[]` |
+| `200 OK` | Health check succeeds, invoices are retrieved, or an existing payment is replayed using its idempotency key |
 | `201 Created` | An invoice or payment is created, with its data in the response |
 | `400 Bad Request` | Invalid JSON, missing/invalid fields, or an invalid invoice ID |
 | `404 Not Found` | Invoice, unit, or route does not exist |
 | `405 Method Not Allowed` | The path exists but the HTTP method is unsupported; `Allow` lists supported methods |
-| `409 Conflict` | Payment exceeds the outstanding balance, or the unit has no unpaid balance |
+| `409 Conflict` | Payment exceeds the outstanding balance, the unit has no unpaid balance, or an idempotency key is reused with different data |
+| `413 Content Too Large` | Request body exceeds 1 MiB |
+| `415 Unsupported Media Type` | POST Content-Type is missing or is not application/json |
 | `500 Internal Server Error` | Unexpected application/database failure or a recovered panic |
 | `503 Service Unavailable` | `/health` cannot reach the database; its ping has a two-second timeout |
 

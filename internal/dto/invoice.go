@@ -10,11 +10,11 @@ import (
 type CreateInvoiceRequest struct {
 	Unit    string                     `json:"unit" binding:"required,max=50"`
 	DueDate string                     `json:"due_date" binding:"required"`
-	Items   []CreateInvoiceItemRequest `json:"items" binding:"required,min=1,dive"`
+	Items   []CreateInvoiceItemRequest `json:"items" binding:"required,min=1,max=100,dive"`
 }
 
 type CreateInvoiceItemRequest struct {
-	Description string  `json:"description" binding:"required"`
+	Description string  `json:"description" binding:"required,max=500"`
 	AmountTHB   *Amount `json:"amount_thb" binding:"required"`
 }
 

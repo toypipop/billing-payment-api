@@ -2,6 +2,8 @@ package repository
 
 import (
 	"billing-payment-api/internal/model"
+	"context"
+	"errors"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -15,8 +17,8 @@ func NewInvoiceRepository(db *gorm.DB) *InvoiceRepository {
 	return &InvoiceRepository{db: db}
 }
 
-func (r *InvoiceRepository) Create(invoice *model.Invoice, unitNumber string) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
+func (r *InvoiceRepository) Create(ctx context.Context, invoice *model.Invoice, unitNumber string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		unit := model.Unit{UnitNumber: unitNumber}
 		if err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "unit_number"}},
@@ -33,9 +35,9 @@ func (r *InvoiceRepository) Create(invoice *model.Invoice, unitNumber string) er
 	})
 }
 
-func (r *InvoiceRepository) GetAll(unitNumber *string) ([]model.Invoice, error) {
+func (r *InvoiceRepository) GetAll(ctx context.Context, unitNumber *string) ([]model.Invoice, error) {
 	var invoices []model.Invoice
-	query := r.db
+	query := r.db.WithContext(ctx)
 	if unitNumber != nil {
 		query = query.Where("unit_id IN (?)", r.db.Model(&model.Unit{}).Select("id").Where("unit_number = ?", *unitNumber))
 	}
@@ -45,12 +47,15 @@ func (r *InvoiceRepository) GetAll(unitNumber *string) ([]model.Invoice, error) 
 	return invoices, err
 }
 
-func (r *InvoiceRepository) GetByID(id uint) (*model.Invoice, error) {
+func (r *InvoiceRepository) GetByID(ctx context.Context, id uint) (*model.Invoice, error) {
 	var invoice model.Invoice
-	err := r.db.Preload("Unit").Preload("InvoiceItems", func(db *gorm.DB) *gorm.DB {
+	err := r.db.WithContext(ctx).Preload("Unit").Preload("InvoiceItems", func(db *gorm.DB) *gorm.DB {
 		return db.Order("id ASC")
 	}).First(&invoice, id).Error
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, model.ErrInvoiceNotFound
+		}
 		return nil, err
 	}
 

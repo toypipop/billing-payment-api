@@ -3,11 +3,13 @@ package dto
 import "time"
 
 type CreatePaymentRequest struct {
-	Unit      string  `json:"unit" binding:"required,max=50"`
-	AmountTHB *Amount `json:"amount_thb" binding:"required"`
+	IdempotencyKey string  `json:"-"`
+	Unit           string  `json:"unit" binding:"required,max=50"`
+	AmountTHB      *Amount `json:"amount_thb" binding:"required"`
 }
 
 type PaymentResponse struct {
+	Replayed    bool                        `json:"-"`
 	ID          uint                        `json:"id"`
 	UnitID      uint                        `json:"unit_id"`
 	Unit        string                      `json:"unit"`

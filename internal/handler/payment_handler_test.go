@@ -3,6 +3,7 @@ package handler_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -93,7 +94,7 @@ func seedInvoice(t *testing.T, db *gorm.DB, unit, number, due string, total, pai
 	invoice := model.Invoice{InvoiceNumber: number, DueDate: date, TotalAmountCents: total, PaidAmountCents: paid,
 		InvoiceItems: []model.InvoiceItem{{Description: "Fee", AmountCents: total}},
 	}
-	if err := repository.NewInvoiceRepository(db).Create(&invoice, unit); err != nil {
+	if err := repository.NewInvoiceRepository(db).Create(context.Background(), &invoice, unit); err != nil {
 		t.Fatal(err)
 	}
 	return invoice
@@ -388,5 +389,26 @@ func TestGetInvoicesByUnitAndTHB(t *testing.T) {
 				t.Fatalf("incorrect THB fields: %s", w.Body.String())
 			}
 		}
+	}
+}
+
+func TestInvoiceRepositoryCancellation(t *testing.T) {
+	db := paymentTestDB(t)
+	invoice := seedInvoice(t, db, "A101", "INV001", "2026-08-01", 10000, 0)
+	repo := repository.NewInvoiceRepository(db)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := repo.GetByID(ctx, invoice.ID); !errors.Is(err, context.Canceled) {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if _, err := repo.GetAll(ctx, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("GetAll: %v", err)
+	}
+	if err := repo.Create(ctx, &model.Invoice{InvoiceNumber: "CANCELED"}, "NEW-UNIT"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Create: %v", err)
+	}
+	var count int64
+	if err := db.Model(&model.Unit{}).Where("unit_number = ?", "NEW-UNIT").Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("canceled create wrote a unit: %d %v", count, err)
 	}
 }

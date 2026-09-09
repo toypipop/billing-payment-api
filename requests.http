@@ -1,5 +1,6 @@
 @baseUrl = http://localhost:8080
 @unit = A101
+@paymentKey = payment-demo-001
 
 ### Health check
 GET {{baseUrl}}/health
@@ -25,8 +26,10 @@ GET {{baseUrl}}/invoices?unit={{unit}}
 GET {{baseUrl}}/invoices
 
 ### Create payment
+# Reuse this key to retry the same payment; change it for a new payment.
 POST {{baseUrl}}/payments
 Content-Type: application/json
+Idempotency-Key: {{paymentKey}}
 
 {
   "unit": "{{unit}}",

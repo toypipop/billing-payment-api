@@ -1,6 +1,7 @@
 package handler_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -203,7 +204,7 @@ func TestCreateInvoiceUnitLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 		duplicate := model.Invoice{InvoiceNumber: result.InvoiceNumber, DueDate: result.DueDate}
-		if err := repo.Create(&duplicate, room); err == nil {
+		if err := repo.Create(context.Background(), &duplicate, room); err == nil {
 			t.Fatal("expected duplicate invoice number error")
 		}
 		if err := tx.Model(&model.Unit{}).Count(&count).Error; err != nil {
