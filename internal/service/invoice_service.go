@@ -4,7 +4,6 @@ import (
 	"billing-payment-api/internal/dto"
 	"billing-payment-api/internal/model"
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"math"
@@ -71,7 +70,6 @@ func (s *InvoiceService) Create(ctx context.Context, req dto.CreateInvoiceReques
 	}
 
 	invoice := model.Invoice{
-		InvoiceNumber:    "INV-" + rand.Text(),
 		DueDate:          dueDate,
 		TotalAmountCents: totalAmountCents,
 		InvoiceItems:     items,

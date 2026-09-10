@@ -280,7 +280,7 @@ The unit must already exist. Payments target a unit; callers cannot select an
 individual invoice or bypass the allocation order.
 
 Allocation uses oldest `due_date` first, then `invoice_number` ascending
-(case-sensitive byte order) for matching dates. This is not creation-ID order.
+(case-sensitive byte order) for matching dates, not invoice ID.
 All outstanding invoices qualify, including those not yet overdue. Already-paid
 and zero-total invoices are skipped.
 
@@ -314,7 +314,12 @@ a payment of 1,200 baht returns `201` with the following allocation fields
 ```
 
 Invoice numbers above are illustrative; `POST /invoices` generates unique
-`INV-...` numbers automatically. Each allocation's `amount_thb` is the portion
+numbers such as `INV-0000000001` from a PostgreSQL sequence shared across units
+and API processes. Numbers have ten digits, up to `INV-9999999999`; the sequence
+does not wrap. Rollbacks can leave gaps, and sequence order does not guarantee
+commit order or match invoice IDs. Existing invoice numbers are preserved;
+when first installed, the sequence starts after existing numbers of this format.
+Restarting the API does not reset the sequence. Each allocation's `amount_thb` is the portion
 of this payment assigned to that invoice; `paid_amount_thb` is the cumulative
 paid amount after this payment.
 

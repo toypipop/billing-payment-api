@@ -5,6 +5,7 @@ import (
 	"billing-payment-api/internal/model"
 	"context"
 	"errors"
+	"fmt"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -28,6 +29,13 @@ func (r *InvoiceRepository) Create(ctx context.Context, invoice *model.Invoice, 
 			return err
 		}
 		invoice.UnitID = unit.ID
+		if invoice.InvoiceNumber == "" {
+			var number int64
+			if err := tx.Raw("SELECT nextval('invoice_number_seq')").Scan(&number).Error; err != nil {
+				return err
+			}
+			invoice.InvoiceNumber = fmt.Sprintf("INV-%010d", number)
+		}
 		if err := tx.Create(invoice).Error; err != nil {
 			return err
 		}

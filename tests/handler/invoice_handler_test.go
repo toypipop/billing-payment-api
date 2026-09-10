@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"billing-payment-api/internal/database"
 	"billing-payment-api/internal/dto"
 	"billing-payment-api/internal/handler"
 	"billing-payment-api/internal/model"
@@ -50,6 +51,9 @@ func TestCreateInvoiceUnitLifecycle(t *testing.T) {
 	if err := tx.AutoMigrate(&model.Unit{}, &model.Invoice{}, &model.InvoiceItem{}); err != nil {
 		t.Fatal(err)
 	}
+	if err := database.MigrateInvoiceSequence(tx); err != nil {
+		t.Fatal(err)
+	}
 	r := router.SetupRouter(handler.NewHealthHandler(tx), handler.NewInvoiceHandler(service.NewInvoiceService(repository.NewInvoiceRepository(tx))), handler.NewPaymentHandler(service.NewPaymentService(repository.NewPaymentRepository(tx))))
 	empty := httptest.NewRecorder()
 	r.ServeHTTP(empty, httptest.NewRequest(http.MethodGet, "/invoices", nil))
@@ -72,6 +76,9 @@ func TestCreateInvoiceUnitLifecycle(t *testing.T) {
 	var result dto.InvoiceResponse
 	if err := json.Unmarshal(first.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
+	}
+	if result.InvoiceNumber != "INV-0000000001" {
+		t.Fatalf("invoice number = %s", result.InvoiceNumber)
 	}
 	if result.TotalAmountTHB != 180000 || len(result.Items) != 2 || result.Items[0].AmountTHB != 150000 || result.InvoiceNumber == "" || result.DueDate.Format("2006-01-02") != "2026-08-01" {
 		t.Fatalf("unexpected invoice: %+v", result)
@@ -110,6 +117,9 @@ func TestCreateInvoiceUnitLifecycle(t *testing.T) {
 	var repeated dto.InvoiceResponse
 	if err := json.Unmarshal(second.Body.Bytes(), &repeated); err != nil {
 		t.Fatal(err)
+	}
+	if repeated.InvoiceNumber != "INV-0000000002" {
+		t.Fatalf("invoice number = %s", repeated.InvoiceNumber)
 	}
 	if repeated.UnitID != result.UnitID || repeated.ID == result.ID || repeated.InvoiceNumber == result.InvoiceNumber {
 		t.Fatalf("unexpected repeated invoice: %+v", repeated)

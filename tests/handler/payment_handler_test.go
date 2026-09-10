@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"billing-payment-api/internal/database"
 	"billing-payment-api/internal/dto"
 	"billing-payment-api/internal/handler"
 	"billing-payment-api/internal/model"
@@ -62,6 +63,9 @@ func paymentTestDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(&model.Unit{}, &model.Invoice{}, &model.InvoiceItem{}, &model.Payment{}, &model.PaymentAllocation{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.MigrateInvoiceSequence(db); err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -115,7 +119,7 @@ func TestPaymentAllocation(t *testing.T) {
 	db := paymentTestDB(t)
 	r := paymentTestRouter(db)
 	// Insert in a different order from allocation priority. Equal due dates
-	// must sort by invoice number, not insertion ID.
+	// must sort by invoice number even when IDs would sort differently.
 	third := seedInvoice(t, db, "A101", "INV003", "2026-08-15", 50000, 0)
 	second := seedInvoice(t, db, "A101", "INV002", "2026-08-01", 50000, 0)
 	first := seedInvoice(t, db, "A101", "INV001", "2026-08-01", 100000, 0)

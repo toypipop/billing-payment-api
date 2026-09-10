@@ -51,5 +51,9 @@ func Connect() (*gorm.DB, error) {
 		return nil, err
 	}
 
+	if err := MigrateInvoiceSequence(db); err != nil {
+		_ = sqlDB.Close()
+		return nil, err
+	}
 	return db, nil
 }
