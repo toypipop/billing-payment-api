@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"billing-payment-api/internal/dto"
 	"billing-payment-api/internal/model"
 	"context"
 	"errors"
@@ -35,9 +36,13 @@ func (r *InvoiceRepository) Create(ctx context.Context, invoice *model.Invoice, 
 	})
 }
 
-func (r *InvoiceRepository) GetAll(ctx context.Context, unitNumber *string) ([]model.Invoice, error) {
+func (r *InvoiceRepository) GetAll(ctx context.Context, unitNumber *string, pages ...dto.InvoicePage) ([]model.Invoice, error) {
 	var invoices []model.Invoice
-	query := r.db.WithContext(ctx)
+	page := dto.InvoicePage{}.Normalize()
+	if len(pages) > 0 {
+		page = pages[0].Normalize()
+	}
+	query := r.db.WithContext(ctx).Where("id > ?", page.AfterID).Limit(page.Limit)
 	if unitNumber != nil {
 		query = query.Where("unit_id IN (?)", r.db.Model(&model.Unit{}).Select("id").Where("unit_number = ?", *unitNumber))
 	}

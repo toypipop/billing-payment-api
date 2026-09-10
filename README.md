@@ -148,7 +148,7 @@ Endpoints:
 | --- | --- | --- |
 | `GET` | `/health` | Check API and database |
 | `POST` | `/invoices` | Create invoice |
-| `GET` | `/invoices` | Get all invoices with items, ordered by ID ascending; returns `[]` when empty |
+| `GET` | `/invoices` | Get a page of invoices with items, ordered by ID ascending; returns `[]` when empty |
 | `GET` | `/invoices?unit=A101` | Get invoices for one unit, ordered by ID ascending; returns `[]` when none match |
 | `GET` | `/invoices/:id` | Get invoice by ID |
 | `POST` | `/payments` | Allocate a payment across a unit's outstanding invoices |
@@ -184,12 +184,57 @@ ID returns `404`.
 
 Use `GET /invoices?unit=A101` to find invoices by unit. The filter is an exact,
 case-sensitive match after trimming surrounding whitespace. An absent filter
-returns all invoices; an unknown unit returns `200` with `[]`. An empty, repeated,
+returns a page across all units; an unknown unit returns `200` with `[]`. An empty, repeated,
 or longer-than-50-character `unit` filter returns `400` with code `INVALID_UNIT`.
 
 This changes the public money contract: replace the old `amount` and
 `*_amount_cents` fields with the THB fields above. Response numbers are in baht,
 not satang. Existing database values are preserved without currency conversion.
+
+### Invoice pagination
+
+`GET /invoices` now returns at most 50 invoices by default, rather than every
+invoice. The response remains a JSON array with items included. Use `limit`
+(1 to 100) and `after_id` (0 to 9223372036854775807, default 0):
+
+```http
+GET /invoices?unit=A101&limit=50&after_id=100
+```
+
+Keep the same filter and limit, then pass the last returned invoice ID as
+`after_id` for the next page. Stop when a page has fewer than `limit` entries;
+an exactly full final page can require one additional request returning `[]`.
+Empty, repeated, malformed or out-of-range pagination parameters return
+`400 INVALID_PAGINATION`. Pages use `id > after_id`, ordered by ID ascending;
+they are live reads, not a frozen snapshot across multiple requests.
+
+### Connection pool and operation timeouts
+
+Set these process environment variables before starting the API. As with
+`DATABASE_URL`, `.env.example` is documentation; `.env` is not loaded automatically.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `DB_MAX_OPEN_CONNS` | `20` | Maximum DB connections per API process |
+| `DB_MAX_IDLE_CONNS` | `10` | Idle connections retained; 0 allowed, cannot exceed max open |
+| `DB_CONN_MAX_LIFETIME` | `30m` | Maximum connection lifetime |
+| `DB_CONN_MAX_IDLE_TIME` | `5m` | Maximum idle connection time |
+| `REQUEST_TIMEOUT` | `10s` | Request context budget for DB work/pool waits; also connection establishment timeout |
+| `DB_STATEMENT_TIMEOUT` | `10s` | PostgreSQL timeout per statement |
+| `DB_LOCK_TIMEOUT` | `3s` | PostgreSQL timeout per lock acquisition |
+
+Durations use Go notation (`500ms`, `10s`, `5m`) and must be at least 1ms.
+Invalid settings fail startup. Pool size is a starting point, not a measured
+capacity recommendation; budget connections across all API processes and other
+DB clients. New physical connections also receive PostgreSQL timeout settings.
+These statement limits apply to startup migrations too.
+
+Timed-out DB operations return `503 REQUEST_TIMEOUT` (request deadline) or
+`503 DATABASE_TIMEOUT` (PostgreSQL statement/lock timeout). Failed payment
+transactions roll back. Reuse the same Idempotency-Key when retrying after a
+timeout or an uncertain response. These are cooperative operation deadlines,
+not HTTP socket read/write limits; they do not interrupt slow request-body
+reads or response writes. The health check retains its shorter two-second limit.
 
 ### Invoice balances and status
 

@@ -22,7 +22,7 @@ type InvoiceService struct {
 
 type InvoiceStore interface {
 	Create(context.Context, *model.Invoice, string) error
-	GetAll(context.Context, *string) ([]model.Invoice, error)
+	GetAll(context.Context, *string, ...dto.InvoicePage) ([]model.Invoice, error)
 	GetByID(context.Context, uint) (*model.Invoice, error)
 }
 
@@ -84,7 +84,7 @@ func (s *InvoiceService) Create(ctx context.Context, req dto.CreateInvoiceReques
 	return toInvoiceResponse(&invoice), nil
 }
 
-func (s *InvoiceService) GetAll(ctx context.Context, unitNumber *string) ([]dto.InvoiceResponse, error) {
+func (s *InvoiceService) GetAll(ctx context.Context, unitNumber *string, pages ...dto.InvoicePage) ([]dto.InvoiceResponse, error) {
 	if unitNumber != nil {
 		unit, valid := normalizeUnit(*unitNumber)
 		if !valid {
@@ -92,7 +92,7 @@ func (s *InvoiceService) GetAll(ctx context.Context, unitNumber *string) ([]dto.
 		}
 		unitNumber = &unit
 	}
-	invoices, err := s.invoiceRepository.GetAll(ctx, unitNumber)
+	invoices, err := s.invoiceRepository.GetAll(ctx, unitNumber, pages...)
 	if err != nil {
 		return nil, err
 	}

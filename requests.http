@@ -22,8 +22,11 @@ Content-Type: application/json
 ### Get invoices by unit (edit @unit above; repeat after payment)
 GET {{baseUrl}}/invoices?unit={{unit}}
 
-### Get all invoices
+### Get first page of invoices (default 50, maximum 100)
 GET {{baseUrl}}/invoices
+
+### Next page (replace after_id with the last ID from the previous page)
+GET {{baseUrl}}/invoices?limit=50&after_id=100&unit={{unit}}
 
 ### Create payment
 # Reuse this key to retry the same payment; change it for a new payment.

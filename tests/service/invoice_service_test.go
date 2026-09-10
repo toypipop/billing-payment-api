@@ -43,7 +43,7 @@ func (s invoiceStoreStub) GetByID(context.Context, uint) (*model.Invoice, error)
 	return &s.invoice, nil
 }
 
-func (s invoiceStoreStub) GetAll(context.Context, *string) ([]model.Invoice, error) {
+func (s invoiceStoreStub) GetAll(context.Context, *string, ...dto.InvoicePage) ([]model.Invoice, error) {
 	return []model.Invoice{s.invoice}, nil
 }
 

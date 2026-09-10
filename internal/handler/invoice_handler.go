@@ -42,6 +42,27 @@ func (h *InvoiceHandler) Create(c *gin.Context) {
 }
 
 func (h *InvoiceHandler) GetAll(c *gin.Context) {
+	page := dto.InvoicePage{Limit: 50}
+	for _, name := range []string{"limit", "after_id"} {
+		values, present := c.Request.URL.Query()[name]
+		if !present {
+			continue
+		}
+		if len(values) != 1 {
+			response.Error(c, 400, "INVALID_PAGINATION", "provide exactly one "+name, nil)
+			return
+		}
+		value, err := strconv.ParseUint(values[0], 10, 63)
+		if err != nil || (name == "limit" && (value < 1 || value > 100)) {
+			response.Error(c, 400, "INVALID_PAGINATION", "limit must be 1 to 100; after_id must be a non-negative bigint", nil)
+			return
+		}
+		if name == "limit" {
+			page.Limit = int(value)
+		} else {
+			page.AfterID = uint(value)
+		}
+	}
 	var unit *string
 	if values, present := c.Request.URL.Query()["unit"]; present {
 		if len(values) != 1 {
@@ -50,7 +71,7 @@ func (h *InvoiceHandler) GetAll(c *gin.Context) {
 		}
 		unit = &values[0]
 	}
-	invoices, err := h.invoiceService.GetAll(c.Request.Context(), unit)
+	invoices, err := h.invoiceService.GetAll(c.Request.Context(), unit, page)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidUnit) {
 			response.Error(c, http.StatusBadRequest, "INVALID_UNIT", err.Error(), nil)

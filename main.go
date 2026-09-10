@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 
+	"billing-payment-api/internal/config"
 	"billing-payment-api/internal/database"
 	"billing-payment-api/internal/handler"
 	"billing-payment-api/internal/repository"
@@ -16,6 +17,11 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 	if os.Getenv("GIN_MODE") == "" {
 		gin.SetMode(gin.ReleaseMode)
+	}
+	settings, err := config.Load()
+	if err != nil {
+		slog.Error("startup_failed", "error", err)
+		os.Exit(1)
 	}
 	db, err := database.Connect()
 	if err != nil {
@@ -31,7 +37,7 @@ func main() {
 	paymentService := service.NewPaymentService(paymentRepository)
 	paymentHandler := handler.NewPaymentHandler(paymentService)
 
-	r := router.SetupRouter(healthHandler, invoiceHandler, paymentHandler)
+	r := router.SetupRouter(healthHandler, invoiceHandler, paymentHandler, settings.RequestTimeout)
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
