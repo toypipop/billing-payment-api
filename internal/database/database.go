@@ -55,5 +55,9 @@ func Connect() (*gorm.DB, error) {
 		_ = sqlDB.Close()
 		return nil, err
 	}
+	if err := MigratePerformanceIndexes(db); err != nil {
+		_ = sqlDB.Close()
+		return nil, err
+	}
 	return db, nil
 }

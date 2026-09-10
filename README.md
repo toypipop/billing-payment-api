@@ -1,546 +1,93 @@
-# Simple Billing & Payment API
+# Billing & Payment API
 
-REST API for creating invoices, viewing balances, and allocating unit payments.
+## 1. Setup and Run Instructions
 
-Current stack:
+Install and start [Docker Desktop](https://www.docker.com/products/docker-desktop/).
 
-- Go
-- Gin
-- PostgreSQL
-- GORM
-- Docker Compose
-- Air for automatic rebuilds during development
+### Run
 
-## 1. Install
-
-Required:
-
-- Go 1.26+
-- Docker Desktop
-- VS Code REST Client extension, optional
-
-Install Go dependencies:
+Create the local environment file:
 
 ```bash
-go mod tidy
+cp .env.example .env
 ```
 
-Install Air (the version verified with this project's Windows configuration):
-
-```bash
-go install github.com/air-verse/air@v1.65.3
-```
-
-Make sure Go's binary directory is on `PATH` (normally `%USERPROFILE%\go\bin`
-on Windows), then check `air -v`.
-
-The API reads `DATABASE_URL` and `PORT` from the process environment. Defaults
-work with the included Docker Compose setup. `.env.example` documents the database
-URL; copying it to `.env` alone does not load it into `go run .` or the included
-Air configuration. To override settings in PowerShell before running either command:
+On PowerShell:
 
 ```powershell
-$env:DATABASE_URL="postgres://billing_user:billing_password@localhost:5432/billing_payment?sslmode=disable"
-$env:PORT="8080"
+Copy-Item .env.example .env
 ```
 
-## 2. How to Run
-
-Open Docker Desktop first.
-
-Build and start the API with PostgreSQL:
+Then run this command from the project directory:
 
 ```bash
 docker compose up --build -d
 ```
 
-Docker Compose waits until PostgreSQL is healthy before starting the API. The
-API is available at `http://localhost:8080`; inspect both services with:
+- API: `http://localhost:8080`
+- Swagger UI: `http://localhost:8081`
 
-```bash
-docker compose ps
-```
-
-Interactive Swagger UI is available at `http://localhost:8081`. It reads the
-OpenAPI document at `http://localhost:8080/openapi.yaml` and supports **Try it out**.
-
-Run all commands below from the project root only when running the API outside
-Docker. The API entry point is `main.go` in `billing-payment-api/`.
-
-Run API server:
-
-```bash
-go run .
-```
-
-Server URL:
-
-```text
-http://localhost:8080
-```
-
-If port `8080` is already used:
-
-```powershell
-$env:PORT="8081"; go run .
-```
-
-For automatic rebuilds during development, run Air from the project root:
-
-```bash
-air
-```
-
-The included `.air.toml` builds `main.go` at the root into `tmp/main.exe`
-for Windows and restarts the API when Go source files change.
-It stops the running binary if a rebuild fails. Stop Air with `Ctrl+C`.
-
-To use a different port with Air:
-
-```powershell
-$env:PORT="8081"
-air
-```
-
-When using `go run .`, restart the command after changing Go source files.
-
-Stop PostgreSQL:
+Stop the services:
 
 ```bash
 docker compose down
 ```
 
-## 3. Project Structure and API
+## 2. API Endpoints
 
-Run commands from the directory containing `main.go` and `go.mod`:
-
-```text
-main.go                 Application entrypoint
-.air.toml               Air configuration for Windows
-internal/
-  database/             PostgreSQL connection and schema migration
-  dto/                  Request and response types
-  handler/              HTTP handlers
-  model/                Database models
-  repository/           Database queries
-  router/               HTTP routes
-  service/              Invoice logic
-requests.http           REST Client requests
-openapi.yaml            OpenAPI 3.0 document
-Dockerfile              API container image
-docker-compose.yml      API and local PostgreSQL containers
-tmp/                    Build output and logs
-```
-
-Request flow:
+After starting the services, open Swagger UI in your browser:
 
 ```text
-Request -> Router -> Handler -> Service -> Repository -> PostgreSQL
+http://localhost:8081
 ```
 
-Handlers translate HTTP requests and application errors. Services validate input
-and build responses, using small repository interfaces. Repositories handle GORM,
-database error translation, and transactions. Request contexts reach all invoice
-and payment queries.
+Swagger UI lists every endpoint, request body, response, and HTTP status code.
+Use **Try it out** to send requests to the local API.
 
-`model.PlanPayment` calculates allocation without database access or changing its
-input. The payment repository calls it after locking invoices and saves the plan
-in the same transaction. `Invoice.Outstanding()` and `Invoice.Status()` keep balance
-rules shared between invoice and payment responses.
+## 3. Database Choice
 
-Endpoints:
+This project uses **PostgreSQL**.
 
-| Method | Endpoint | Description |
-| --- | --- | --- |
-| `GET` | `/health` | Check API and database |
-| `POST` | `/invoices` | Create invoice |
-| `GET` | `/invoices` | Get a page of invoices with items, ordered by ID ascending; returns `[]` when empty |
-| `GET` | `/invoices?unit=A101` | Get invoices for one unit, ordered by ID ascending; returns `[]` when none match |
-| `GET` | `/invoices/:id` | Get invoice by ID |
-| `POST` | `/payments` | Allocate a payment across a unit's outstanding invoices |
+PostgreSQL was chosen because it is well suited for financial data that requires reliable transactions and strong data consistency. It also handles complex relational structures and JSON data well, and I am familiar with using it.
 
-`POST /invoices` request:
+## 4. Request / Response Examples
 
-```json
-{
-  "unit": "A101",
-  "due_date": "2026-08-01",
-  "items": [
-    { "description": "Common Fee", "amount_thb": 1500 },
-    { "description": "Water Fee", "amount_thb": 300 }
-  ]
-}
+See every endpoint, request, response, and HTTP status code in Swagger UI:
+
+```text
+http://localhost:8081
 ```
 
-`unit` is the room number. Existing rooms are reused and their `updated_at`
-is refreshed; missing rooms are created. Each successful POST creates a new
-invoice with an automatically generated invoice number. Room and invoice writes
-run in one transaction.
-
-`due_date` must be a valid `YYYY-MM-DD` date. `amount_thb` is in baht, is required,
-and must be greater than zero after truncating extra decimal places to two
-without rounding (for example, 12.349 becomes 12.34). Negative values are rejected.
-Amounts are
-stored internally as integer satang; all request and response money fields use
-THB JSON numbers (`amount_thb`, `total_amount_thb`, `paid_amount_thb`, and
-`outstanding_amount_thb`). The example totals `1800.00` THB. Requests do not require
-`invoice_number` or `unit_id`.
-
-An invoice must have at least one item. Unit numbers and item descriptions are
-trimmed and must not be blank. Invalid input returns `400`; an unknown invoice
-ID returns `404`.
-
-Use `GET /invoices?unit=A101` to find invoices by unit. The filter is an exact,
-case-sensitive match after trimming surrounding whitespace. An absent filter
-returns a page across all units; an unknown unit returns `200` with `[]`. An empty, repeated,
-or longer-than-50-character `unit` filter returns `400` with code `INVALID_UNIT`.
-
-This changes the public money contract: replace the old `amount` and
-`*_amount_cents` fields with the THB fields above. Response numbers are in baht,
-not satang. Existing database values are preserved without currency conversion.
-
-### Invoice pagination
-
-`GET /invoices` now returns at most 50 invoices by default, rather than every
-invoice. The response remains a JSON array with items included. Use `limit`
-(1 to 100) and `after_id` (0 to 9223372036854775807, default 0):
+Example: create an invoice.
 
 ```http
-GET /invoices?unit=A101&limit=50&after_id=100
-```
-
-Keep the same filter and limit, then pass the last returned invoice ID as
-`after_id` for the next page. Stop when a page has fewer than `limit` entries;
-an exactly full final page can require one additional request returning `[]`.
-Empty, repeated, malformed or out-of-range pagination parameters return
-`400 INVALID_PAGINATION`. Pages use `id > after_id`, ordered by ID ascending;
-they are live reads, not a frozen snapshot across multiple requests.
-
-### Connection pool and operation timeouts
-
-Set these process environment variables before starting the API. As with
-`DATABASE_URL`, `.env.example` is documentation; `.env` is not loaded automatically.
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `DB_MAX_OPEN_CONNS` | `20` | Maximum DB connections per API process |
-| `DB_MAX_IDLE_CONNS` | `10` | Idle connections retained; 0 allowed, cannot exceed max open |
-| `DB_CONN_MAX_LIFETIME` | `30m` | Maximum connection lifetime |
-| `DB_CONN_MAX_IDLE_TIME` | `5m` | Maximum idle connection time |
-| `REQUEST_TIMEOUT` | `10s` | Request context budget for DB work/pool waits; also connection establishment timeout |
-| `DB_STATEMENT_TIMEOUT` | `10s` | PostgreSQL timeout per statement |
-| `DB_LOCK_TIMEOUT` | `3s` | PostgreSQL timeout per lock acquisition |
-
-Durations use Go notation (`500ms`, `10s`, `5m`) and must be at least 1ms.
-Invalid settings fail startup. Pool size is a starting point, not a measured
-capacity recommendation; budget connections across all API processes and other
-DB clients. New physical connections also receive PostgreSQL timeout settings.
-These statement limits apply to startup migrations too.
-
-Timed-out DB operations return `503 REQUEST_TIMEOUT` (request deadline) or
-`503 DATABASE_TIMEOUT` (PostgreSQL statement/lock timeout). Failed payment
-transactions roll back. Reuse the same Idempotency-Key when retrying after a
-timeout or an uncertain response. These are cooperative operation deadlines,
-not HTTP socket read/write limits; they do not interrupt slow request-body
-reads or response writes. The health check retains its shorter two-second limit.
-
-### Invoice balances and status
-
-Create, get-by-ID, and list responses include `unit`, `paid_amount_thb`,
-`outstanding_amount_thb`, and `status`, alongside the existing invoice number,
-unit ID, due date, total, timestamps, and items. For the example above, the
-balance fields initially are:
-
-```json
-{
-  "unit": "A101",
-  "total_amount_thb": 1800.00,
-  "paid_amount_thb": 0,
-  "outstanding_amount_thb": 1800.00,
-  "status": "UNPAID"
-}
-```
-
-`outstanding_amount_thb = total_amount_thb - paid_amount_thb`.
-Status is calculated from those amounts rather than stored separately:
-
-| Status | Condition |
-| --- | --- |
-| `UNPAID` | Nothing paid and total is greater than zero |
-| `PARTIAL` | Paid amount is greater than zero but below the total |
-| `PAID` | Paid amount equals the total; includes zero-total invoices |
-
-Existing invoices receive a paid amount of zero when the schema is upgraded.
-
-### Payment allocation
-
-```http
-POST /payments
+POST /invoices
 Content-Type: application/json
-Idempotency-Key: payment-demo-001
 
-{"unit":"A101","amount_thb":1200}
-```
-
-`amount_thb` is in baht and must be greater than zero after truncating extra decimal
-places to two without rounding, fitting in an `int64` number of satang internally.
-Negative values and amounts that truncate to zero (such as 0.009) return `400`.
-Responses use THB
-numbers with two decimal places, for example `599.00` or `0.29`.
-The unit must already exist. Payments target a unit; callers cannot select an
-individual invoice or bypass the allocation order.
-
-Allocation uses oldest `due_date` first, then `invoice_number` ascending
-(case-sensitive byte order) for matching dates, not invoice ID.
-All outstanding invoices qualify, including those not yet overdue. Already-paid
-and zero-total invoices are skipped.
-
-For INV001 = 1,000 baht due 2026-08-01 and INV002 = 500 baht due 2026-08-15,
-a payment of 1,200 baht returns `201` with the following allocation fields
-(actual responses also include payment ID, unit ID, and creation time):
-
-```json
 {
   "unit": "A101",
-  "amount_thb": 1200.00,
-  "allocations": [
+  "due_date": "2026-10-01",
+  "items": [
     {
-      "invoice_id": 1,
-      "invoice_number": "INV001",
-      "amount_thb": 1000.00,
-      "paid_amount_thb": 1000.00,
-      "outstanding_amount_thb": 0,
-      "status": "PAID"
-    },
-    {
-      "invoice_id": 2,
-      "invoice_number": "INV002",
-      "amount_thb": 200.00,
-      "paid_amount_thb": 200.00,
-      "outstanding_amount_thb": 300.00,
-      "status": "PARTIAL"
+      "description": "Common fee",
+      "amount_thb": 1500
     }
   ]
 }
 ```
 
-Invoice numbers above are illustrative; `POST /invoices` generates unique
-numbers such as `INV-0000000001` from a PostgreSQL sequence shared across units
-and API processes. Numbers have ten digits, up to `INV-9999999999`; the sequence
-does not wrap. Rollbacks can leave gaps, and sequence order does not guarantee
-commit order or match invoice IDs. Existing invoice numbers are preserved;
-when first installed, the sequence starts after existing numbers of this format.
-Restarting the API does not reset the sequence. Each allocation's `amount_thb` is the portion
-of this payment assigned to that invoice; `paid_amount_thb` is the cumulative
-paid amount after this payment.
+The API returns `201 Created` with the created invoice.
 
-**Overpayment policy:** reject the entire payment with `409` if it exceeds the
-unit's outstanding balance. No payment, allocation, or balance change is saved.
-This keeps the API from holding an untracked surplus: it does not maintain a
-credit wallet or initiate refunds. Submit an amount at or below the remaining
-balance. If all invoices are already paid, a new payment also returns `409`.
+## 5. Assumptions and Trade-offs
 
-| Result | HTTP status |
-| --- | --- |
-| Full payment, partial payment, or one payment across multiple invoices | `201` |
-| Missing/blank unit, missing/negative amount, amount that truncates to zero, invalid or missing Idempotency-Key, overflow, or malformed JSON | `400` |
-| Unit not found | `404` |
-| Unit has no outstanding invoices, or payment exceeds its outstanding balance | `409` |
-| Database failure; all payment writes are rolled back | `500` |
+- Payments require an `Idempotency-Key` to prevent duplicate records during retries.
+- Amounts beyond two decimal places are truncated, so clients should send precise payment values.
 
-Payments, allocation records, and invoice balance updates commit in one database
-transaction. A lock on the unit serializes simultaneous payments for that unit;
-invoice rows are also locked during allocation. Invoice creation uses the same
-unit lock via its upsert. Different units can be processed independently.
+## 6. Scaling Considerations
 
-This endpoint records payments; it does not charge a bank account or card.
+Find the slow part first, then improve it.
 
-### Payment retries (Idempotency-Key)
-
-Send an `Idempotency-Key` header on every `POST /payments`. Use a unique key
-for each intended payment and reuse it when retrying that payment:
-
-```http
-POST /payments
-Content-Type: application/json
-Idempotency-Key: payment-demo-001
-
-{"unit":"A101","amount_thb":599}
-```
-
-- First success: `201`, with a new payment.
-- Same key, same trimmed unit and amount: `200`, with the original payment ID
-  and allocation balances, plus `Idempotency-Replayed: true`. No new payment is
-  saved, including when the unit has since been fully paid.
-- Same key, different unit or amount: `409 IDEMPOTENCY_CONFLICT`.
-- Invalid key: `400 INVALID_IDEMPOTENCY_KEY`. Supply one header containing
-  1–128 ASCII letters, digits, hyphens or underscores.
-- Failed/rolled-back requests do not consume the key; they may be retried.
-- Without a key, every successful POST records a new payment, as before.
-
-Keys are global to this API database and persist with the payment; they do not
-expire automatically. A transaction-scoped advisory lock serializes the same key
-even across different units, and a unique index prevents duplicate stored keys.
-The key, payment, allocations and balance changes commit together. Existing
-payments retain a null key. Allocation records save their post-payment paid
-amount so replay uses the original balance, rather than a later payment's balance.
-Use invoice GET endpoints to see current balances. Response timestamps use UTC.
-
-### Request validation limits
-
-Both POST endpoints require `Content-Type: application/json` (parameters such as
-`charset=utf-8` are accepted); missing or unsupported media types return `415
-UNSUPPORTED_MEDIA_TYPE`. JSON must contain exactly one object, with no unknown
-fields or trailing values/text. These failures return `400 INVALID_REQUEST`.
-
-- Maximum body: 1 MiB, including trailing whitespace; larger bodies return `413
-  REQUEST_TOO_LARGE`.
-- Invoice items: 1–100.
-- Item description: nonblank, at most 500 characters.
-- Unit: nonblank, at most 50 characters.
-
-Invoice field limits are also enforced by the service for calls outside HTTP.
-
-## 4. Test API
-
-### VS Code REST Client
-
-1. Install extension: `REST Client`
-2. Open `requests.http`
-3. Click `Send Request` on `Health check`
-4. Click `Send Request` on `Create invoice`
-5. Click `Send Request` on `Get all invoices` to list all invoices
-6. To get one invoice, copy its returned `id` into `Get invoice by ID`
-
-### curl
-
-```bash
-curl http://localhost:8080/health
-```
-
-```bash
-curl http://localhost:8080/invoices
-```
-
-```bash
-curl http://localhost:8080/invoices/1
-```
-
-## 5. Database
-
-PostgreSQL runs from `docker-compose.yml`.
-
-Default connection:
-
-```text
-postgres://billing_user:billing_password@localhost:5432/billing_payment?sslmode=disable
-```
-
-Tables are auto-created on API startup:
-
-- `units`
-- `invoices`
-- `invoice_items`
-- `payments`
-- `payment_allocations`
-
-Startup does not seed any room or invoice data.
-
-## 6. HTTP status and logs
-
-| HTTP status | When this API returns it |
-| --- | --- |
-| `200 OK` | Health check succeeds, invoices are retrieved, or an existing payment is replayed using its idempotency key |
-| `201 Created` | An invoice or payment is created, with its data in the response |
-| `400 Bad Request` | Invalid JSON, missing/invalid fields, or an invalid invoice ID |
-| `404 Not Found` | Invoice, unit, or route does not exist |
-| `405 Method Not Allowed` | The path exists but the HTTP method is unsupported; `Allow` lists supported methods |
-| `409 Conflict` | Payment exceeds the outstanding balance, the unit has no unpaid balance, or an idempotency key is reused with different data |
-| `413 Content Too Large` | Request body exceeds 1 MiB |
-| `415 Unsupported Media Type` | POST Content-Type is missing or is not application/json |
-| `500 Internal Server Error` | Unexpected application/database failure or a recovered panic |
-| `503 Service Unavailable` | `/health` cannot reach the database; its ping has a two-second timeout |
-
-`POST /invoices` also returns `Location: /invoices/{id}`. Use the exact routes
-above: trailing slashes are not redirected and return `404`.
-
-`204 No Content` is for successful operations without response content; the
-current successful endpoints return data, so none uses `204`. `412 Precondition
-Failed` applies when a request-header precondition such as `If-Match` fails;
-this API does not currently implement conditional requests. Payment balance
-conflicts use `409`. See [HTTP semantics, RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#section-15).
-
-For example, `"amount_thb": 599` is a valid JSON number, while
-`"amount_thb": "599"` is a string and returns `400 INVALID_REQUEST`.
-A trailing comma in JSON also returns `400`. These are validation/syntax
-failures, not `412` precondition failures.
-
-Every request handled by the application receives a server-generated
-`X-Request-ID` response header. All error responses share this shape, keeping
-the existing `error` message field and adding a stable `code` and `request_id`:
-
-```json
-{
-  "error": "payment exceeds unit outstanding balance; no payment was recorded",
-  "code": "OVERPAYMENT",
-  "request_id": "example-request-id"
-}
-```
-
-Error codes include `INVALID_REQUEST`, `INVALID_INVOICE`, `INVALID_INVOICE_ID`,
-`INVALID_PAYMENT`, `INVALID_UNIT`, `INVOICE_NOT_FOUND`, `UNIT_NOT_FOUND`, `ROUTE_NOT_FOUND`,
-`METHOD_NOT_ALLOWED`, `OVERPAYMENT`, `NO_OUTSTANDING_INVOICES`, `INTERNAL_ERROR`,
-and `DATABASE_UNAVAILABLE`. Database details and panic traces are kept in server
-logs; clients receive a public error message and the request ID.
-
-Run `air` or `go run .` to see structured JSON logs in the terminal. Each request
-produces one `http_request` entry after processing. It includes timestamp,
-level, request ID, method, path (without query parameters), route pattern,
-actual HTTP status and status text, latency in milliseconds, and response bytes.
-Errors add `error_code` and `error`; internal failures add `causes`, and panics
-add `stack`.
-
-| Log level | Responses |
-| --- | --- |
-| `INFO` | Successful responses and redirects |
-| `WARN` | `4xx` responses |
-| `ERROR` | `5xx` responses and panics |
-
-Example request log (shown formatted for readability; output is one JSON line):
-
-```json
-{
-  "time": "2026-09-09T23:00:00+07:00",
-  "level": "WARN",
-  "msg": "http_request",
-  "request_id": "example-request-id",
-  "method": "POST",
-  "path": "/payments",
-  "route": "/payments",
-  "status": 409,
-  "status_text": "Conflict",
-  "latency_ms": 2.5,
-  "response_bytes": 153,
-  "error_code": "OVERPAYMENT",
-  "error": "payment exceeds unit outstanding balance; no payment was recorded"
-}
-```
-
-Request/response bodies, query strings, authorization headers, and cookies are
-not dumped into access logs. GORM's separate SQL output is disabled in the app
-to avoid duplicate logs with interpolated values; failures are logged by the
-request or startup logger. Startup emits `server_starting`, `startup_failed`,
-or `server_failed`. Gin defaults to release mode unless `GIN_MODE` is set.
-Air's own output remains separate; `tmp/build-errors.log` is a build log, not
-the HTTP access log. Runtime logs go to stdout and are not stored in a file
-automatically.
-
-If a panic happens after headers were already sent, the log preserves that
-actual status, uses `ERROR`, and sets `response_aborted: true`; the connection
-is aborted rather than appending a second response. An abort before headers
-uses status `0` in the log because no HTTP response was sent.
-
-Automated logging tests check status/level consistency, error envelopes,
-request IDs, empty `204` bodies, `412` logging, internal-error isolation, and
-panic recovery. The `204` and `412` cases use middleware test routes; they do
-not add endpoints to the application or extra requests to `requests.http`.
+- **API:** Use pagination and limit invoice items; consider batching payment allocations as volume grows.
+- **Backend:** Tune database connection-pool limits and timeouts.
+- **Database:** Use query-specific indexes and materialized views for read-heavy
+  reports.

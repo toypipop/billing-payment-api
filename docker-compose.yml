@@ -4,8 +4,9 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: billing-payment-api
+    env_file:
+      - .env
     environment:
-      DATABASE_URL: postgres://billing_user:billing_password@postgres:5432/billing_payment?sslmode=disable
       PORT: "8080"
     ports:
       - "8080:8080"
