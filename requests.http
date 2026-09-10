@@ -1,6 +1,6 @@
 @baseUrl = http://localhost:8080
-@unit = A101
-@paymentKey = payment-demo-001
+@unit = A102
+@paymentKey = {{unit}}-002
 
 ### Health check
 GET {{baseUrl}}/health
@@ -12,7 +12,9 @@ Content-Type: application/json
 
 {
   "unit": "{{unit}}",
-  "due_date": "2026-08-01",
+  "due_date": "2026-09-01",
+  # "due_date": "2026-08-01",
+  # "due_date": "2026-07-01",
   "items": [
     { "description": "Common Fee", "amount_thb": 1500 },
     { "description": "Water Fee", "amount_thb": 300 }
@@ -36,5 +38,5 @@ Idempotency-Key: {{paymentKey}}
 
 {
   "unit": "{{unit}}",
-  "amount_thb": 599
+  "amount_thb": 400
 }
