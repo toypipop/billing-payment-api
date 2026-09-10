@@ -55,8 +55,8 @@ func (s *InvoiceService) Create(ctx context.Context, req dto.CreateInvoiceReques
 		if description == "" {
 			return nil, fmt.Errorf("%w: item description is required", ErrInvalidInvoice)
 		}
-		if item.AmountTHB == nil || *item.AmountTHB < 0 {
-			return nil, fmt.Errorf("%w: amount_thb is required and must be non-negative", ErrInvalidInvoice)
+		if item.AmountTHB == nil || *item.AmountTHB <= 0 {
+			return nil, fmt.Errorf("%w: amount_thb is required and must be greater than zero", ErrInvalidInvoice)
 		}
 		amountCents := int64(*item.AmountTHB)
 		if amountCents > math.MaxInt64-totalAmountCents {

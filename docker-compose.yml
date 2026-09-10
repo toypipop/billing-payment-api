@@ -1,4 +1,24 @@
 services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: billing-payment-api
+    environment:
+      DATABASE_URL: postgres://billing_user:billing_password@postgres:5432/billing_payment?sslmode=disable
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
   postgres:
     image: postgres:16-alpine
     container_name: billing-payment-postgres
@@ -15,6 +35,20 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 5s
+
+  swagger-ui:
+    image: swaggerapi/swagger-ui:latest
+    container_name: billing-payment-swagger-ui
+    environment:
+      SWAGGER_JSON: /tmp/openapi.yaml
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./openapi.yaml:/tmp/openapi.yaml:ro
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   postgres_data:

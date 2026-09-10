@@ -48,14 +48,24 @@ $env:PORT="8080"
 
 Open Docker Desktop first.
 
-Start PostgreSQL:
+Build and start the API with PostgreSQL:
 
 ```bash
-docker compose up -d
+docker compose up --build -d
 ```
 
-Run all commands below from the project root. The API entry point is
-`main.go` in `billing-payment-api/`.
+Docker Compose waits until PostgreSQL is healthy before starting the API. The
+API is available at `http://localhost:8080`; inspect both services with:
+
+```bash
+docker compose ps
+```
+
+Interactive Swagger UI is available at `http://localhost:8081`. It reads the
+OpenAPI document at `http://localhost:8080/openapi.yaml` and supports **Try it out**.
+
+Run all commands below from the project root only when running the API outside
+Docker. The API entry point is `main.go` in `billing-payment-api/`.
 
 Run API server:
 
@@ -94,12 +104,6 @@ air
 
 When using `go run .`, restart the command after changing Go source files.
 
-Run check:
-
-```bash
-go test ./...
-```
-
 Stop PostgreSQL:
 
 ```bash
@@ -116,13 +120,15 @@ main.go                 Application entrypoint
 internal/
   database/             PostgreSQL connection and schema migration
   dto/                  Request and response types
-  handler/              HTTP handlers and integration tests
+  handler/              HTTP handlers
   model/                Database models
   repository/           Database queries
   router/               HTTP routes
   service/              Invoice logic
 requests.http           REST Client requests
-docker-compose.yml      Local PostgreSQL
+openapi.yaml            OpenAPI 3.0 document
+Dockerfile              API container image
+docker-compose.yml      API and local PostgreSQL containers
 tmp/                    Build output and logs
 ```
 
@@ -172,7 +178,9 @@ invoice with an automatically generated invoice number. Room and invoice writes
 run in one transaction.
 
 `due_date` must be a valid `YYYY-MM-DD` date. `amount_thb` is in baht, is required,
-and accepts zero or positive values with up to two decimal places. Amounts are
+and must be greater than zero after truncating extra decimal places to two
+without rounding (for example, 12.349 becomes 12.34). Negative values are rejected.
+Amounts are
 stored internally as integer satang; all request and response money fields use
 THB JSON numbers (`amount_thb`, `total_amount_thb`, `paid_amount_thb`, and
 `outstanding_amount_thb`). The example totals `1800.00` THB. Requests do not require
@@ -269,12 +277,15 @@ Existing invoices receive a paid amount of zero when the schema is upgraded.
 ```http
 POST /payments
 Content-Type: application/json
+Idempotency-Key: payment-demo-001
 
 {"unit":"A101","amount_thb":1200}
 ```
 
-`amount_thb` is in baht and must be greater than zero, with at most two decimal
-places, fitting in an `int64` number of satang internally. Responses use THB
+`amount_thb` is in baht and must be greater than zero after truncating extra decimal
+places to two without rounding, fitting in an `int64` number of satang internally.
+Negative values and amounts that truncate to zero (such as 0.009) return `400`.
+Responses use THB
 numbers with two decimal places, for example `599.00` or `0.29`.
 The unit must already exist. Payments target a unit; callers cannot select an
 individual invoice or bypass the allocation order.
@@ -332,7 +343,7 @@ balance. If all invoices are already paid, a new payment also returns `409`.
 | Result | HTTP status |
 | --- | --- |
 | Full payment, partial payment, or one payment across multiple invoices | `201` |
-| Missing/blank unit, missing/zero/negative amount, invalid precision, overflow, or malformed JSON | `400` |
+| Missing/blank unit, missing/negative amount, amount that truncates to zero, invalid or missing Idempotency-Key, overflow, or malformed JSON | `400` |
 | Unit not found | `404` |
 | Unit has no outstanding invoices, or payment exceeds its outstanding balance | `409` |
 | Database failure; all payment writes are rolled back | `500` |
@@ -346,7 +357,7 @@ This endpoint records payments; it does not charge a bank account or card.
 
 ### Payment retries (Idempotency-Key)
 
-Send an optional `Idempotency-Key` header on `POST /payments`. Use a unique key
+Send an `Idempotency-Key` header on every `POST /payments`. Use a unique key
 for each intended payment and reuse it when retrying that payment:
 
 ```http
@@ -389,39 +400,6 @@ fields or trailing values/text. These failures return `400 INVALID_REQUEST`.
 - Unit: nonblank, at most 50 characters.
 
 Invoice field limits are also enforced by the service for calls outside HTTP.
-
-### Automated checks
-
-All test files live under `tests/`, grouped by the code they exercise:
-
-```text
-tests/
-  dto/
-  handler/
-  middleware/
-  model/
-  router/
-  service/
-```
-
-Run all tests with `go test ./...`, or just the test tree with
-`go test ./tests/...`. For coverage of application code from these separate
-test packages, use `go test ./tests/... -coverpkg=./internal/...`.
-
-`go test ./...` runs unit tests; PostgreSQL integration tests are skipped unless
-`TEST_DATABASE_URL` is set. Integration tests cover creation, balances, ordering,
-partial/full payments, paid invoices, invalid requests, overpayments, rollback,
-and concurrent payments. They use uniquely named temporary schemas; invoice
-tests roll back their schema transaction, while payment tests commit isolated
-fixtures for concurrency checks and drop their schema during cleanup. Run with
-an account allowed to create schemas:
-
-```powershell
-$env:TEST_DATABASE_URL="postgres://billing_user:billing_password@localhost:5432/billing_payment?sslmode=disable"
-go test ./... -count=1
-```
-
-Without `TEST_DATABASE_URL`, the PostgreSQL integration tests are skipped.
 
 ## 4. Test API
 

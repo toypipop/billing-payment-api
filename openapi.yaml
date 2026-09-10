@@ -1,0 +1,246 @@
+openapi: 3.0.3
+info:
+  title: Billing & Payment API
+  version: 1.0.0
+  description: Create invoices and allocate unit payments to outstanding invoices.
+  license:
+    name: UNLICENSED
+servers:
+  - url: http://{host}:{port}
+    variables:
+      host: { default: localhost }
+      port: { default: '8080' }
+security: []
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Check API and database health
+      responses:
+        '200':
+          description: API and database are available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+  /invoices:
+    get:
+      operationId: listInvoices
+      summary: List invoices
+      parameters:
+        - $ref: '#/components/parameters/Unit'
+        - name: limit
+          in: query
+          description: Number of results, from 1 to 100. Defaults to 50.
+          schema: { type: integer, minimum: 1, maximum: 100 }
+        - name: after_id
+          in: query
+          description: Return invoices with an ID greater than this value.
+          schema: { type: integer, minimum: 0 }
+      responses:
+        '200':
+          description: Invoice page
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Invoice' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+    post:
+      operationId: createInvoice
+      summary: Create an invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInvoiceRequest' }
+            example:
+              unit: A101
+              due_date: '2026-10-01'
+              items:
+                - description: Common fee
+                  amount_thb: 1500
+      responses:
+        '201':
+          description: Invoice created
+          headers:
+            Location:
+              schema: { type: string, example: /invoices/1 }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+  /invoices/{id}:
+    get:
+      operationId: getInvoice
+      summary: Get one invoice
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Invoice
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/InvoiceNotFound' }
+  /payments:
+    post:
+      operationId: createPayment
+      summary: Record and allocate a payment
+      description: The Idempotency-Key is required. Reuse the same key only when retrying the same payment.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: 1 to 128 ASCII letters, digits, hyphens, or underscores.
+          schema: { type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9_-]+$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePaymentRequest' }
+            example: { unit: A101, amount_thb: 1200 }
+      responses:
+        '201':
+          description: Payment recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Payment' }
+        '200':
+          description: Earlier payment returned for an idempotent retry
+          headers:
+            Idempotency-Replayed:
+              schema: { type: string, example: 'true' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Payment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/UnitNotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+components:
+  parameters:
+    Unit:
+      name: unit
+      in: query
+      schema: { type: string, maxLength: 50 }
+  schemas:
+    Health:
+      type: object
+      required: [status, database]
+      properties:
+        status: { type: string, example: ok }
+        database: { type: string, example: ok }
+    CreateInvoiceRequest:
+      type: object
+      required: [unit, due_date, items]
+      properties:
+        unit: { type: string, minLength: 1, maxLength: 50 }
+        due_date: { type: string, format: date }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            required: [description, amount_thb]
+            properties:
+              description: { type: string, minLength: 1, maxLength: 500 }
+              amount_thb: { type: number, minimum: 0, exclusiveMinimum: true, description: Must remain greater than zero after extra decimal places are truncated to two. }
+    CreatePaymentRequest:
+      type: object
+      required: [unit, amount_thb]
+      properties:
+        unit: { type: string, minLength: 1, maxLength: 50 }
+        amount_thb: { type: number, minimum: 0, exclusiveMinimum: true, description: Must remain greater than zero after extra decimal places are truncated to two. }
+    InvoiceItem:
+      type: object
+      required: [id, description, amount_thb, created_at, updated_at]
+      properties:
+        id: { type: integer, example: 1 }
+        description: { type: string, example: Common fee }
+        amount_thb: { type: number, format: double, example: 1500.00 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Invoice:
+      type: object
+      required: [id, invoice_number, unit_id, unit, due_date, total_amount_thb, paid_amount_thb, outstanding_amount_thb, status, created_at, updated_at, items]
+      properties:
+        id: { type: integer, example: 1 }
+        invoice_number: { type: string, example: INV-0000000001 }
+        unit_id: { type: integer, example: 1 }
+        unit: { type: string, example: A101 }
+        due_date: { type: string, format: date-time }
+        total_amount_thb: { type: number, example: 1500.00 }
+        paid_amount_thb: { type: number, example: 0.00 }
+        outstanding_amount_thb: { type: number, example: 1500.00 }
+        status: { type: string, enum: [UNPAID, PARTIAL, PAID] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/InvoiceItem' }
+    Payment:
+      type: object
+      required: [id, unit_id, unit, amount_thb, created_at, allocations]
+      properties:
+        id: { type: integer, example: 1 }
+        unit_id: { type: integer, example: 1 }
+        unit: { type: string, example: A101 }
+        amount_thb: { type: number, example: 1200.00 }
+        created_at: { type: string, format: date-time }
+        allocations:
+          type: array
+          items:
+            type: object
+            required: [invoice_id, invoice_number, amount_thb, paid_amount_thb, outstanding_amount_thb, status]
+            properties:
+              invoice_id: { type: integer, example: 1 }
+              invoice_number: { type: string, example: INV-0000000001 }
+              amount_thb: { type: number, example: 1200.00 }
+              paid_amount_thb: { type: number, example: 1200.00 }
+              outstanding_amount_thb: { type: number, example: 300.00 }
+              status: { type: string, enum: [UNPAID, PARTIAL, PAID] }
+    Error:
+      type: object
+      required: [error, code, request_id]
+      properties:
+        error: { type: string }
+        code: { type: string }
+        request_id: { type: string }
+  responses:
+    BadRequest:
+      description: Invalid request, field, amount, or Idempotency-Key.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    InvoiceNotFound:
+      description: Invoice was not found.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    UnitNotFound:
+      description: Unit was not found.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Conflict:
+      description: Overpayment, no outstanding invoices, or a conflicting idempotency key.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    RequestTooLarge:
+      description: Request body exceeds 1 MiB.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    UnsupportedMediaType:
+      description: Content-Type must be application/json.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    ServiceUnavailable:
+      description: Database is unavailable.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    MethodNotAllowed:
+      description: HTTP method is not supported for this endpoint.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }

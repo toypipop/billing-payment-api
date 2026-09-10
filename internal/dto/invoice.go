@@ -32,7 +32,7 @@ func (a Amount) MarshalJSON() ([]byte, error) {
 func (a *Amount) UnmarshalJSON(data []byte) error {
 	var number json.Number
 	if len(data) == 0 || data[0] == '"' || string(data) == "null" {
-		return fmt.Errorf("amount_thb must be a non-negative JSON number with at most two decimal places")
+		return fmt.Errorf("amount_thb must be a non-negative JSON number")
 	}
 	if err := json.Unmarshal(data, &number); err != nil {
 		return err
@@ -42,10 +42,12 @@ func (a *Amount) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("amount_thb must be a non-negative number")
 	}
 	value.Mul(value, big.NewRat(100, 1))
-	if !value.IsInt() || !value.Num().IsInt64() {
-		return fmt.Errorf("amount_thb must fit in int64 satang and have at most two decimal places")
+	// Truncate fractional satang exactly, without floating-point rounding.
+	satang := new(big.Int).Quo(value.Num(), value.Denom())
+	if !satang.IsInt64() {
+		return fmt.Errorf("amount_thb must fit in int64 satang")
 	}
-	*a = Amount(value.Num().Int64())
+	*a = Amount(satang.Int64())
 	return nil
 }
 

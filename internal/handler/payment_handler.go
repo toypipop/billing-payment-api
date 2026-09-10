@@ -24,8 +24,8 @@ func (h *PaymentHandler) Create(c *gin.Context) {
 		return
 	}
 	keys := c.Request.Header.Values("Idempotency-Key")
-	if len(keys) > 1 || (len(keys) == 1 && !service.ValidIdempotencyKey(keys[0])) {
-		response.Error(c, http.StatusBadRequest, "INVALID_IDEMPOTENCY_KEY", "Idempotency-Key must contain 1 to 128 ASCII letters, digits, hyphens or underscores", nil)
+	if len(keys) != 1 || !service.ValidIdempotencyKey(keys[0]) {
+		response.Error(c, http.StatusBadRequest, "INVALID_IDEMPOTENCY_KEY", "Idempotency-Key is required and must contain 1 to 128 ASCII letters, digits, hyphens or underscores", nil)
 		return
 	}
 	req.IdempotencyKey = c.GetHeader("Idempotency-Key")

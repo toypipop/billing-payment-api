@@ -16,6 +16,7 @@ func SetupRouter(healthHandler *handler.HealthHandler, invoiceHandler *handler.I
 	r := gin.New()
 	r.RedirectTrailingSlash = false
 	r.HandleMethodNotAllowed = true
+	r.Use(middleware.CORS())
 	r.Use(middleware.RequestLog(slog.Default()))
 	timeout := 10 * time.Second
 	if len(timeouts) > 0 && timeouts[0] > 0 {
@@ -30,6 +31,7 @@ func SetupRouter(healthHandler *handler.HealthHandler, invoiceHandler *handler.I
 	})
 
 	r.GET("/health", healthHandler.Check)
+	r.StaticFile("/openapi.yaml", "openapi.yaml")
 	r.POST("/invoices", invoiceHandler.Create)
 	r.GET("/invoices", invoiceHandler.GetAll)
 	r.GET("/invoices/:id", invoiceHandler.GetByID)
